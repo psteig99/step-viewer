@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stepviewer"
+version = "1.0.0"
+description = "Visualiseur et analyseur de fichiers CAD STEP orienté packaging"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "cascadio>=0.0.14",
+    "trimesh>=4.4",
+    "numpy>=1.24",
+    "pyvista>=0.44",
+]
+
+[project.optional-dependencies]
+web = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9"]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+stepviewer = "stepviewer.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["stepviewer*"]

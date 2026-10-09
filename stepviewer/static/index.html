@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STEP Viewer – packaging</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 3 29 9.5v13L16 29 3 22.5v-13z' fill='%23c08a3e'/><path d='M16 3v26M3 9.5l13 6.5 13-6.5' stroke='%23fff' stroke-width='2' fill='none'/></svg>">
+<link rel="stylesheet" href="/static/app.css">
+<script type="importmap">
+{ "imports": {
+  "three": "/static/vendor/three/three.module.js",
+  "three/addons/": "/static/vendor/three/addons/"
+} }
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 29 9.5v13L16 29 3 22.5v-13z" fill="#c08a3e"/><path d="M16 3v26M3 9.5l13 6.5 13-6.5" stroke="#fff" stroke-width="2" fill="none"/></svg>
+    <span>STEP Viewer</span>
+  </div>
+  <nav class="models" id="models" aria-label="Fichiers ouverts"></nav>
+  <div class="topbar-right">
+    <button class="btn" id="btn-open" type="button">Ouvrir un fichier…</button>
+    <input type="file" id="file-input" accept=".step,.stp,.STEP,.STP" multiple hidden>
+  </div>
+</header>
+
+<main class="layout" id="layout">
+
+  <section class="stage" id="stage">
+    <div class="viewport" id="viewport"></div>
+
+    <div class="drop" id="drop">
+      <div class="drop-inner">
+        <svg class="drop-icon" viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M32 6 56 18v28L32 58 8 46V18z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M32 6v52M8 18l24 12 24-12" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M32 24v14m-6-6 6 6 6-6" fill="none" stroke="#c08a3e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h1>Déposez un fichier STEP ici</h1>
+        <p>Glissez un <b>.step</b> ou <b>.stp</b> depuis votre explorateur, ou <button class="link" id="btn-browse" type="button">choisissez-le</button>. Plusieurs fichiers à la fois sont acceptés.</p>
+        <p class="drop-hint">La pièce est lue sur ce serveur, puis affichée ici avec ses cotes. Rien n'est envoyé ailleurs.</p>
+      </div>
+    </div>
+
+    <div class="loading" id="loading" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <div id="loading-text">Lecture du fichier…</div>
+    </div>
+
+    <div class="toolbar" id="toolbar" hidden>
+      <div class="tool-group" role="group" aria-label="Vues">
+        <button class="tool" data-view="iso" title="Vue isométrique (I)">Iso</button>
+        <button class="tool" data-view="top" title="Dessus (X)">Dessus</button>
+        <button class="tool" data-view="front" title="Face (Y)">Face</button>
+        <button class="tool" data-view="side" title="Côté (Z)">Côté</button>
+        <button class="tool" data-action="fit" title="Recadrer (R)">Recadrer</button>
+      </div>
+      <div class="tool-group" role="group" aria-label="Affichage">
+        <button class="tool toggle" data-toggle="dims" aria-pressed="true" title="Cotes hors-tout (B)">Cotes</button>
+        <button class="tool toggle" data-toggle="wire" aria-pressed="false" title="Filaire (W)">Filaire</button>
+        <button class="tool toggle" data-toggle="alpha" aria-pressed="false" title="Transparence (T)">Transparence</button>
+        <button class="tool toggle" data-toggle="grid" aria-pressed="true" title="Grille">Grille</button>
+      </div>
+      <div class="tool-group" role="group" aria-label="Outils">
+        <button class="tool toggle" data-toggle="measure" aria-pressed="false" title="Mesurer : cliquer deux points (M)">Mesurer</button>
+        <button class="tool toggle" data-toggle="clip" aria-pressed="false" title="Plan de coupe (P)">Coupe</button>
+        <label class="tool range" title="Vue éclatée">Éclaté <input type="range" id="explode" min="0" max="2" step="0.05" value="0"></label>
+        <button class="tool" data-action="shot" title="Capture PNG (F)">Capture</button>
+      </div>
+    </div>
+
+    <div class="clip-panel" id="clip-panel" hidden>
+      <div class="seg" role="group" aria-label="Axe de coupe">
+        <button class="seg-btn" data-axis="x" aria-pressed="true">X</button>
+        <button class="seg-btn" data-axis="y" aria-pressed="false">Y</button>
+        <button class="seg-btn" data-axis="z" aria-pressed="false">Z</button>
+      </div>
+      <input type="range" id="clip-pos" min="0" max="1" step="0.002" value="0.5" aria-label="Position du plan de coupe">
+      <button class="seg-btn" id="clip-flip" title="Inverser le côté conservé">Inverser</button>
+      <span class="clip-value" id="clip-value"></span>
+    </div>
+
+    <div class="measure-hud" id="measure-hud" hidden></div>
+    <div class="hint" id="hint" hidden></div>
+  </section>
+
+  <aside class="panel" id="panel" hidden>
+    <div class="panel-head">
+      <div class="file-name" id="file-name"></div>
+      <div class="file-meta" id="file-meta"></div>
+    </div>
+
+    <div class="warnings" id="warnings"></div>
+
+    <section class="block">
+      <h2>Encombrement</h2>
+      <div class="dims" id="dims"></div>
+      <div class="dims-note" id="dims-oriented"></div>
+    </section>
+
+    <section class="block">
+      <h2>Volumes et masse</h2>
+      <dl class="facts" id="facts"></dl>
+      <div class="field-row">
+        <label for="material">Matériau</label>
+        <select id="material"><option value="">— aucun —</option></select>
+        <label for="density" class="sr-only">Densité</label>
+        <input type="number" id="density" min="0" step="0.01" placeholder="g/cm³" title="Densité personnalisée (g/cm³)">
+      </div>
+    </section>
+
+    <section class="block">
+      <h2>Pièces <span class="count" id="parts-count"></span></h2>
+      <ul class="parts" id="parts"></ul>
+    </section>
+
+    <section class="block" id="compare-block" hidden>
+      <h2>Comparer avec une autre révision</h2>
+      <div class="field-row">
+        <label for="compare">Référence</label>
+        <select id="compare"><option value="">— aucune —</option></select>
+      </div>
+      <div class="compare-result" id="compare-result"></div>
+    </section>
+
+    <section class="block">
+      <h2>Colisage</h2>
+      <div class="fit-form">
+        <div class="field-row three">
+          <label>Carton intérieur (mm)
+            <span class="triple">
+              <input type="number" id="fit-L" value="400" min="1"> <input type="number" id="fit-l" value="300" min="1"> <input type="number" id="fit-h" value="250" min="1">
+            </span>
+          </label>
+        </div>
+        <div class="field-row">
+          <label>Jeu par unité <input type="number" id="fit-jeu" value="1" min="0" step="0.5"> mm</label>
+          <label class="check"><input type="checkbox" id="fit-rot" checked> rotation libre</label>
+        </div>
+        <div class="field-row">
+          <label>Palette <select id="fit-pallet"></select></label>
+          <label>H max <input type="number" id="fit-hmax" value="1800" min="300" step="10"> mm</label>
+        </div>
+      </div>
+      <div class="fit-result" id="fit-result"></div>
+    </section>
+
+    <section class="block">
+      <h2>Télécharger</h2>
+      <div class="downloads" id="downloads"></div>
+    </section>
+
+    <section class="block shortcuts">
+      <h2>Raccourcis</h2>
+      <p>I X Y Z vues · R recadrer · W filaire · T transparence · B cotes · M mesurer · P coupe · F capture · Échap annuler</p>
+      <p>Souris : glisser = tourner · molette = zoom · clic droit = déplacer</p>
+    </section>
+  </aside>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
