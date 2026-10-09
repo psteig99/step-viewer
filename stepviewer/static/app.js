@@ -4,7 +4,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 
 /* ------------------------------------------------------------------------ */
-/*  État                                                                     */
+/*  State                                                                    */
 /* ------------------------------------------------------------------------ */
 const PALETTE = [0x3b6fb6, 0xd1495b, 0x6aa84f, 0x8e63b5, 0xec8f2a, 0x30a5b8, 0x7f7f7f, 0xc9a227, 0x1f8a70, 0xb85c38];
 const state = {
@@ -26,7 +26,7 @@ const el = {
 };
 
 /* ------------------------------------------------------------------------ */
-/*  Scène three.js                                                           */
+/*  three.js scene                                                           */
 /* ------------------------------------------------------------------------ */
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -42,7 +42,7 @@ el.viewport.appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100000);
-camera.up.set(0, 0, 1);                    // convention CAO : Z vers le haut
+camera.up.set(0, 0, 1);                    // CAD convention: Z up
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; controls.dampingFactor = 0.08;
 controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
@@ -54,7 +54,7 @@ const modelRoot = new THREE.Group(); scene.add(modelRoot);
 const helpers = new THREE.Group(); scene.add(helpers);
 const measureRoot = new THREE.Group(); scene.add(measureRoot);
 const compareRoot = new THREE.Group(); scene.add(compareRoot);
-const INNER_COLOR = 0xc08a3e;   // ocre kraft : intérieur de la matière vu par la coupe
+const INNER_COLOR = 0xc08a3e;   // kraft ochre: material interior visible through section cut
 let grid = null;
 
 function resize() {
@@ -68,25 +68,25 @@ resize();
 (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera); })();
 
 /* ------------------------------------------------------------------------ */
-/*  Chargement de fichiers                                                   */
+/*  File loading                                                             */
 /* ------------------------------------------------------------------------ */
 const isStep = (f) => /\.(step|stp)$/i.test(f.name);
 
 async function handleFiles(files) {
   const list = [...files].filter(isStep);
-  if (!list.length) return toast("Aucun fichier .step / .stp dans la sélection.", true);
+  if (!list.length) return toast("No .step / .stp file in selection.", true);
   for (const f of list) await uploadFile(f);
 }
 
 async function uploadFile(file) {
   el.loading.hidden = false;
-  el.loadingText.textContent = `Lecture de ${file.name} (${fmtBytes(file.size)})…`;
+  el.loadingText.textContent = `Reading ${file.name} (${fmtBytes(file.size)})…`;
   try {
     const fd = new FormData(); fd.append("file", file);
     const res = await fetch("/api/models", { method: "POST", body: fd });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Erreur ${res.status}`);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Error ${res.status}`);
     const payload = await res.json();
-    el.loadingText.textContent = "Affichage de la pièce…";
+    el.loadingText.textContent = "Displaying part…";
     const gltf = await new GLTFLoader().loadAsync(payload.glb_url);
     registerModel(payload, gltf.scene);
     showModel(payload.id);
@@ -100,7 +100,7 @@ async function uploadFile(file) {
 function registerModel(payload, group) {
   const parts = new Map();
   let i = 0;
-  const byName = new Map(payload.analysis.details.map((d) => [d.nom, d]));
+  const byName = new Map(payload.analysis.details.map((d) => [d.name, d]));
   const meshes = [];
   group.traverse((o) => { if (o.isMesh) meshes.push(o); });
   meshes.forEach((o) => {
@@ -110,7 +110,7 @@ function registerModel(payload, group) {
     o.material = new THREE.MeshStandardMaterial({ color: PALETTE[i % PALETTE.length], metalness: 0.05, roughness: 0.55,
       flatShading: true, side: THREE.DoubleSide, clippingPlanes: [] });
     o.userData.index = i; o.userData.baseColor = o.material.color.getHex(); o.userData.basePos = o.position.clone();
-    // Intérieur de la matière : faces arrière teintées, visibles seulement quand le plan de coupe ouvre la pièce.
+    // Material interior: back-face tinted, visible only when section plane opens the part.
     const inner = new THREE.Mesh(o.geometry, new THREE.MeshStandardMaterial({ color: INNER_COLOR, roughness: 0.9, metalness: 0,
       flatShading: true, side: THREE.BackSide, clippingPlanes: [] }));
     inner.name = `${name}__inner`; inner.visible = false; o.add(inner); o.userData.inner = inner;
@@ -125,14 +125,14 @@ function registerModel(payload, group) {
 }
 
 function resolvePartName(mesh, byName) {
-  // trimesh nomme les nœuds d'après la pièce ; on remonte jusqu'à un nom connu.
+  // trimesh names nodes after the part; walk up until a known name is found.
   let o = mesh;
   while (o) { if (byName.has(o.name)) return o.name; o = o.parent; }
   return mesh.name || mesh.parent?.name || `piece_${byName.size}`;
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Affichage d'un modèle                                                    */
+/*  Model display                                                            */
 /* ------------------------------------------------------------------------ */
 function showModel(id) {
   const m = state.models.get(id);
@@ -155,17 +155,17 @@ function showModel(id) {
 function buildHelpers(m) {
   const size = m.box.getSize(new THREE.Vector3()), c = m.box.getCenter(new THREE.Vector3());
   const span = Math.max(size.x, size.y, size.z) || 1;
-  // grille au sol (plan XY, sous la pièce)
+  // floor grid (XY plane, below the part)
   const step = niceStep(span / 8), n = Math.ceil((span * 2.5) / step);
   grid = new THREE.GridHelper(n * step, n, 0xb8c0ca, 0xd3d9e0);
   grid.rotation.x = Math.PI / 2;
   grid.position.set(c.x, c.y, m.box.min.z - span * 0.002);
   grid.material.transparent = true; grid.material.opacity = 0.9;
   helpers.add(grid);
-  // cotes hors-tout dessinées comme sur un plan
+  // overall dimensions drawn like a technical drawing
   m.dims = buildDimensions(m.box, span);
   helpers.add(m.dims);
-  // plan de coupe
+  // section plane
   state.clip.plane.constant = 0;
   updateClip();
   camera.near = span / 500; camera.far = span * 50; camera.updateProjectionMatrix();
@@ -183,7 +183,7 @@ function buildDimensions(box, span) {
   const dim = (a, b, ext1, ext2, label) => {
     segs.push(a, b, ext1[0], ext1[1], ext2[0], ext2[1]);
     const d = b.clone().sub(a).normalize(), perp = Math.abs(d.z) > 0.9 ? V(1, 0, 0) : V(0, 0, 1);
-    for (const p of [a, b]) { // flèches en « tirets » 45°
+    for (const p of [a, b]) { // arrow "dash" at 45°
       const s = p === a ? 1 : -1;
       segs.push(p, p.clone().addScaledVector(d, s * tick).addScaledVector(perp, tick * 0.6));
       segs.push(p, p.clone().addScaledVector(d, s * tick).addScaledVector(perp, -tick * 0.6));
@@ -192,24 +192,24 @@ function buildDimensions(box, span) {
     const l = new CSS2DObject(div); l.position.copy(a.clone().add(b).multiplyScalar(0.5)); g.add(l);
   };
   const fx = (v) => `${fmt(v)} mm`;
-  // L (X) : devant, au sol
+  // L (X): front, at floor
   dim(V(min.x, min.y - off, min.z), V(max.x, min.y - off, min.z),
       [V(min.x, min.y, min.z), V(min.x, min.y - off - tick, min.z)], [V(max.x, min.y, min.z), V(max.x, min.y - off - tick, min.z)], fx(max.x - min.x));
-  // l (Y) : à droite, au sol
+  // W (Y): right, at floor
   dim(V(max.x + off, min.y, min.z), V(max.x + off, max.y, min.z),
       [V(max.x, min.y, min.z), V(max.x + off + tick, min.y, min.z)], [V(max.x, max.y, min.z), V(max.x + off + tick, max.y, min.z)], fx(max.y - min.y));
-  // h (Z) : coin arrière droit, la cote monte en s'éloignant du regard
+  // H (Z): rear right corner
   dim(V(max.x + off, max.y + off, min.z), V(max.x + off, max.y + off, max.z),
       [V(max.x, max.y, min.z), V(max.x + off + tick, max.y + off + tick, min.z)], [V(max.x, max.y, max.z), V(max.x + off + tick, max.y + off + tick, max.z)], fx(max.z - min.z));
   const geo = new THREE.BufferGeometry().setFromPoints(segs);
   g.add(new THREE.LineSegments(geo, mat));
-  // arêtes de la boîte englobante, discrètes
+  // bounding box edges, subtle
   const bb = new THREE.Box3Helper(box, 0x1f4e9a); bb.material.transparent = true; bb.material.opacity = 0.35; g.add(bb);
   return g;
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Vues, drapeaux d'affichage                                                */
+/*  Views and display flags                                                  */
 /* ------------------------------------------------------------------------ */
 function setView(name) {
   const m = cur(); if (!m) return;
@@ -240,7 +240,7 @@ function applyFlags() {
   el.viewport.classList.toggle("measuring", state.flags.measure);
   el.clipPanel.hidden = !state.flags.clip;
   document.querySelectorAll("[data-toggle]").forEach((b) => b.setAttribute("aria-pressed", String(!!state.flags[b.dataset.toggle])));
-  if (state.flags.measure) hint("Mesure : cliquez deux points sur la pièce. Échap pour quitter."); else if (!state.flags.clip) hint(null);
+  if (state.flags.measure) hint("Measure: click two points on the part. Esc to exit."); else if (!state.flags.clip) hint(null);
 }
 
 function setExplode(v) {
@@ -262,11 +262,11 @@ function updateClip() {
   state.clip.plane.normal.copy(n);
   state.clip.plane.constant = state.clip.flip ? -pos : pos;
   el.clipValue.textContent = `${a.toUpperCase()} = ${fmt(pos)} mm`;
-  if (state.flags.clip) hint("Coupe : déplacez le curseur pour traverser la pièce. P pour quitter.");
+  if (state.flags.clip) hint("Section: move the slider to cut through the part. P to exit.");
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Mesure                                                                   */
+/*  Measure                                                                  */
 /* ------------------------------------------------------------------------ */
 const raycaster = new THREE.Raycaster();
 let downPos = null;
@@ -308,36 +308,36 @@ function clearMeasure() {
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Panneau latéral                                                          */
+/*  Side panel                                                               */
 /* ------------------------------------------------------------------------ */
 function fillPanel(m) {
   const a = m.payload.analysis;
   $("#file-name").textContent = m.payload.name;
-  $("#file-meta").textContent = `${fmtBytes(m.payload.size_bytes)} · ${a.pieces} pièce${a.pieces > 1 ? "s" : ""} · ${a.triangles.toLocaleString("fr-FR")} triangles`;
+  $("#file-meta").textContent = `${fmtBytes(m.payload.size_bytes)} · ${a.parts} part${a.parts > 1 ? "s" : ""} · ${a.triangles.toLocaleString("en-US")} triangles`;
 
   const w = $("#warnings"); w.innerHTML = "";
-  const warns = [...a.avertissements];
-  if (m.payload.overlaps?.length) warns.push(`${m.payload.overlaps.length} chevauchement(s) d'encombrement entre pièces : ${m.payload.overlaps.slice(0, 4).map(([x, y]) => `${x} ↔ ${y}`).join(", ")}`);
+  const warns = [...a.warnings];
+  if (m.payload.overlaps?.length) warns.push(`${m.payload.overlaps.length} bounding box overlap(s) between parts: ${m.payload.overlaps.slice(0, 4).map(([x, y]) => `${x} ↔ ${y}`).join(", ")}`);
   warns.forEach((t) => { const d = document.createElement("div"); d.className = "warn"; d.textContent = t; w.appendChild(d); });
 
   const [L, l, h] = a.dimensions_mm;
   $("#dims").innerHTML = [["X", L], ["Y", l], ["Z", h]].map(([ax, v]) => `<div class="dim-cell"><div class="axis">${ax}</div><div class="val">${fmt(v)}<small>mm</small></div></div>`).join("");
-  const [Lo, lo, ho] = a.dimensions_orientees_mm;
-  $("#dims-oriented").textContent = `Encombrement orienté minimal : ${fmt(Lo)} × ${fmt(lo)} × ${fmt(ho)} mm`;
+  const [Lo, lo, ho] = a.oriented_dimensions_mm;
+  $("#dims-oriented").textContent = `Minimum oriented dims: ${fmt(Lo)} × ${fmt(lo)} × ${fmt(ho)} mm`;
 
   const sel = $("#material");
-  sel.innerHTML = `<option value="">— aucun —</option>` + Object.entries(state.materials).map(([k, v]) => `<option value="${k}">${k} (${v})</option>`).join("");
+  sel.innerHTML = `<option value="">— none —</option>` + Object.entries(state.materials).map(([k, v]) => `<option value="${k}">${k} (${v})</option>`).join("");
   sel.value = m.material; $("#density").value = m.density;
   renderFacts(m);
 
-  $("#parts-count").textContent = `(${a.pieces})`;
+  $("#parts-count").textContent = `(${a.parts})`;
   const ul = $("#parts"); ul.innerHTML = "";
   a.details.forEach((p) => {
-    const mesh = m.parts.get(p.nom), color = mesh ? `#${mesh.userData.baseColor.toString(16).padStart(6, "0")}` : "#999";
-    const li = document.createElement("li"); li.className = "part" + (p.etanche ? "" : " open-mesh"); li.dataset.name = p.nom;
-    li.innerHTML = `<input type="checkbox" ${mesh?.visible === false ? "" : "checked"} aria-label="Afficher ${p.nom}"><span class="sw" style="background:${color}"></span><span class="nm" title="${p.nom}">${p.nom}</span><span class="dm">${p.dimensions_mm.map(fmt).join(" × ")}</span>`;
+    const mesh = m.parts.get(p.name), color = mesh ? `#${mesh.userData.baseColor.toString(16).padStart(6, "0")}` : "#999";
+    const li = document.createElement("li"); li.className = "part" + (p.watertight ? "" : " open-mesh"); li.dataset.name = p.name;
+    li.innerHTML = `<input type="checkbox" ${mesh?.visible === false ? "" : "checked"} aria-label="Show ${p.name}"><span class="sw" style="background:${color}"></span><span class="nm" title="${p.name}">${p.name}</span><span class="dm">${p.dimensions_mm.map(fmt).join(" × ")}</span>`;
     li.querySelector("input").addEventListener("change", (e) => { if (mesh) mesh.visible = e.target.checked; });
-    li.querySelector(".nm").addEventListener("click", () => focusPart(p.nom, m, false));
+    li.querySelector(".nm").addEventListener("click", () => focusPart(p.name, m, false));
     ul.appendChild(li);
   });
 
@@ -349,16 +349,16 @@ function fillPanel(m) {
 
 function renderFacts(m) {
   const a = m.payload.analysis, dens = density(m);
-  const mass = dens && a.volume_matiere_cm3 ? a.volume_matiere_cm3 * dens : null;
+  const mass = dens && a.material_volume_cm3 ? a.material_volume_cm3 * dens : null;
   const rows = [
-    ["Volume matière", `${fmt(a.volume_matiere_cm3)} cm³`],
-    ["Volume englobant", `${fmt(a.volume_englobant_cm3)} cm³`],
-    ["Taux de remplissage", `${fmt(a.taux_remplissage_pct, 1)} %`],
-    ["Surface", `${fmt(a.surface_cm2)} cm²`],
-    ["Masse estimée", mass != null ? `${fmt(mass, 1)} g` : "—"],
+    ["Material vol.", `${fmt(a.material_volume_cm3)} cm³`],
+    ["Bounding vol.", `${fmt(a.bounding_volume_cm3)} cm³`],
+    ["Fill rate", `${fmt(a.fill_rate_pct, 1)} %`],
+    ["Surface area", `${fmt(a.surface_cm2)} cm²`],
+    ["Est. mass", mass != null ? `${fmt(mass, 1)} g` : "—"],
   ];
-  const thick = a.details.map((d) => d.epaisseur_mm_estimee).filter(Boolean);
-  if (thick.length) rows.push(["Épaisseur de paroi estimée", `${thick.map((t) => fmt(t)).join(" / ")} mm`]);
+  const thick = a.details.map((d) => d.wall_thickness_mm).filter(Boolean);
+  if (thick.length) rows.push(["Est. wall thickness", `${thick.map((t) => fmt(t)).join(" / ")} mm`]);
   $("#facts").innerHTML = rows.map(([k, v], i) => `<dt>${k}</dt><dd class="${i === 4 ? "strong" : ""}">${v}</dd>`).join("");
   m.mass_g = mass;
 }
@@ -370,7 +370,7 @@ function focusPart(name, m, fromViewport) {
   m.parts.forEach((mesh, n) => mesh.material.emissive.setHex(n === name ? 0x333333 : 0x000000));
   const li = document.querySelector(`.part[data-name="${CSS.escape(name)}"]`);
   if (fromViewport) li?.scrollIntoView({ block: "nearest" });
-  const d = m.payload.analysis.details.find((p) => p.nom === name);
+  const d = m.payload.analysis.details.find((p) => p.name === name);
   if (d) hint(`${name} : ${d.dimensions_mm.map(fmt).join(" × ")} mm${d.volume_cm3 != null ? ` · ${fmt(d.volume_cm3)} cm³` : ""}`);
   clearTimeout(focusPart.t); focusPart.t = setTimeout(() => { m.parts.forEach((mesh) => mesh.material.emissive.setHex(0)); document.querySelectorAll(".part.focus").forEach((x) => x.classList.remove("focus")); if (!state.flags.measure && !state.flags.clip) hint(null); }, 2500);
 }
@@ -389,33 +389,33 @@ async function computeFit() {
   };
   try {
     const res = await fetch("/api/fit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error((await res.json()).detail || "Calcul impossible");
+    if (!res.ok) throw new Error((await res.json()).detail || "Calculation failed");
     const r = await res.json(), c = r.carton, p = r.pallet;
     $("#fit-result").innerHTML = `
-      <div class="fit-cell"><div class="k">Unités par carton</div><div class="v">${c.quantite} <small>${c.par_axe.join(" × ")}</small></div></div>
-      <div class="fit-cell"><div class="k">Occupation du carton</div><div class="v">${fmt(c.taux_occupation_pct, 1)} %</div></div>
-      <div class="fit-cell"><div class="k">Cartons par palette</div><div class="v">${p.quantite} <small>${p.par_axe.join(" × ")}</small></div></div>
-      <div class="fit-cell"><div class="k">Unités par palette</div><div class="v">${r.units_per_pallet.toLocaleString("fr-FR")}</div></div>
-      <div class="fit-note">Unité posée en ${c.orientation_mm.map(fmt).join(" × ")} mm${r.mass_per_carton_kg ? ` · ${r.mass_per_carton_kg} kg de produit par carton, ${r.mass_per_pallet_kg} kg par palette` : ""}.</div>`;
+      <div class="fit-cell"><div class="k">Units per box</div><div class="v">${c.quantity} <small>${c.per_axis.join(" × ")}</small></div></div>
+      <div class="fit-cell"><div class="k">Box fill rate</div><div class="v">${fmt(c.fill_rate_pct, 1)} %</div></div>
+      <div class="fit-cell"><div class="k">Boxes per pallet</div><div class="v">${p.quantity} <small>${p.per_axis.join(" × ")}</small></div></div>
+      <div class="fit-cell"><div class="k">Units per pallet</div><div class="v">${r.units_per_pallet.toLocaleString("en-US")}</div></div>
+      <div class="fit-note">Unit placed as ${c.orientation_mm.map(fmt).join(" × ")} mm${r.mass_per_carton_kg ? ` · ${r.mass_per_carton_kg} kg of product per box, ${r.mass_per_pallet_kg} kg per pallet` : ""}.</div>`;
   } catch (err) { $("#fit-result").innerHTML = `<div class="fit-note">${err.message}</div>`; }
 }
 
 function renderDownloads(m) {
   const q = m.material ? `?material=${encodeURIComponent(m.material)}` : (parseFloat(m.density) > 0 ? `?density=${m.density}` : "");
   const base = `/api/models/${m.payload.id}`;
-  const items = [["Rapport HTML (3D intégrée)", `${base}/report.html${q}`], ["Analyse JSON", `${base}/analysis.json${q}`],
+  const items = [["HTML report (embedded 3D)", `${base}/report.html${q}`], ["JSON analysis", `${base}/analysis.json${q}`],
     ...["stl", "obj", "glb", "3mf"].map((e) => [e.toUpperCase(), `${base}/export.${e}`])];
   $("#downloads").innerHTML = items.map(([t, u]) => `<a class="dl" href="${u}" download>${t}</a>`).join("");
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Comparaison de deux révisions                                             */
+/*  Revision comparison                                                      */
 /* ------------------------------------------------------------------------ */
 function renderCompareSelect(m) {
   const block = $("#compare-block"), sel = $("#compare");
   const others = [...state.models.values()].filter((x) => x.payload.id !== m.payload.id);
   block.hidden = others.length === 0;
-  sel.innerHTML = `<option value="">— aucune —</option>` + others.map((x) => `<option value="${x.payload.id}">${x.payload.name}</option>`).join("");
+  sel.innerHTML = `<option value="">— none —</option>` + others.map((x) => `<option value="${x.payload.id}">${x.payload.name}</option>`).join("");
   sel.value = others.some((x) => x.payload.id === m.compareWith) ? m.compareWith : "";
   applyCompare(m);
 }
@@ -425,7 +425,7 @@ function applyCompare(m) {
   const ref = m.compareWith ? state.models.get(m.compareWith) : null;
   const out = $("#compare-result");
   if (!ref) { out.innerHTML = ""; return; }
-  // Superposition fantôme de la référence
+  // Ghost overlay of the reference
   const ghost = ref.group.clone(true);
   ghost.traverse((o) => {
     if (!o.isMesh) return;
@@ -434,24 +434,24 @@ function applyCompare(m) {
       flatShading: true, side: THREE.DoubleSide, clippingPlanes: state.flags.clip ? [state.clip.plane] : [] });
   });
   compareRoot.add(ghost);
-  // Tableau des écarts
+  // Delta table
   const a = m.payload.analysis, b = ref.payload.analysis;
   const rows = [
     ["X (mm)", a.dimensions_mm[0], b.dimensions_mm[0]], ["Y (mm)", a.dimensions_mm[1], b.dimensions_mm[1]], ["Z (mm)", a.dimensions_mm[2], b.dimensions_mm[2]],
-    ["Volume matière (cm³)", a.volume_matiere_cm3, b.volume_matiere_cm3], ["Surface (cm²)", a.surface_cm2, b.surface_cm2], ["Pièces", a.pieces, b.pieces],
+    ["Material vol. (cm³)", a.material_volume_cm3, b.material_volume_cm3], ["Surface area (cm²)", a.surface_cm2, b.surface_cm2], ["Parts", a.parts, b.parts],
   ];
   const cell = (v, r) => { const d = v - r, cls = Math.abs(d) < 0.005 ? "" : d > 0 ? " plus" : " minus"; return `<td class="delta${cls}">${d > 0 ? "+" : ""}${fmt(d)}</td>`; };
-  out.innerHTML = `<table><tr><th></th><td>${m.payload.name.length > 18 ? "actuel" : m.payload.name}</td><td>référence</td><td>écart</td></tr>` +
+  out.innerHTML = `<table><tr><th></th><td>${m.payload.name.length > 18 ? "current" : m.payload.name}</td><td>reference</td><td>delta</td></tr>` +
     rows.map(([k, v, r]) => `<tr><th>${k}</th><td>${fmt(v)}</td><td>${fmt(r)}</td>${cell(v, r)}</td></tr>`).join("") + `</table>
-    <div class="compare-legend"><i style="background:#3b6fb6"></i>actuel &nbsp; <i style="background:#d1495b;opacity:.6"></i>référence en superposition</div>`;
+    <div class="compare-legend"><i style="background:#3b6fb6"></i>current &nbsp; <i style="background:#d1495b;opacity:.6"></i>reference overlay</div>`;
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Onglets des fichiers ouverts                                              */
+/*  Open file tabs                                                           */
 /* ------------------------------------------------------------------------ */
 function addTab(payload) {
   const b = document.createElement("div"); b.className = "model-tab"; b.dataset.id = payload.id; b.setAttribute("role", "button"); b.tabIndex = 0;
-  b.innerHTML = `<span title="${payload.name}">${payload.name}</span><button class="x" title="Fermer" aria-label="Fermer ${payload.name}">×</button>`;
+  b.innerHTML = `<span title="${payload.name}">${payload.name}</span><button class="x" title="Close" aria-label="Close ${payload.name}">×</button>`;
   b.addEventListener("click", (e) => { if (e.target.classList.contains("x")) closeModel(payload.id); else showModel(payload.id); });
   b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showModel(payload.id); } });
   el.models.appendChild(b);
@@ -472,7 +472,7 @@ async function closeModel(id) {
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Capture                                                                  */
+/*  Screenshot                                                               */
 /* ------------------------------------------------------------------------ */
 function screenshot() {
   const m = cur(); if (!m) return;
@@ -480,11 +480,11 @@ function screenshot() {
   const a = document.createElement("a");
   a.href = renderer.domElement.toDataURL("image/png");
   a.download = `${m.payload.name.replace(/\.(step|stp)$/i, "")}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`;
-  a.click(); toast("Capture enregistrée (les étiquettes de cotes ne sont pas incluses).");
+  a.click(); toast("Screenshot saved (dimension labels not included).");
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Événements                                                               */
+/*  Events                                                                   */
 /* ------------------------------------------------------------------------ */
 ["dragenter", "dragover"].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); document.body.classList.add("dragging"); }));
 let dragLeaveTimer;
@@ -532,11 +532,11 @@ document.addEventListener("keydown", (e) => {
 });
 
 /* ------------------------------------------------------------------------ */
-/*  Utilitaires                                                              */
+/*  Utilities                                                                */
 /* ------------------------------------------------------------------------ */
 function cur() { return state.current ? state.models.get(state.current) : null; }
-function fmt(v, d = 2) { return Number(v).toLocaleString("fr-FR", { maximumFractionDigits: d }); }
-function fmtBytes(b) { return b < 1048576 ? `${(b / 1024).toFixed(0)} Ko` : `${(b / 1048576).toFixed(1)} Mo`; }
+function fmt(v, d = 2) { return Number(v).toLocaleString("en-US", { maximumFractionDigits: d }); }
+function fmtBytes(b) { return b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`; }
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 function hint(text) { el.hint.hidden = !text; el.hint.textContent = text || ""; }
 let toastTimer;

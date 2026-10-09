@@ -1,5 +1,3 @@
-`featuretype.step` provient du dépôt open source trimesh (licence MIT) et sert
-d'exemple / de jeu de test. Déposez ici vos propres fichiers STEP pour les essais.
+`featuretype.step` comes from the open-source trimesh repository (MIT licence) and serves as a sample/test file. Drop your own STEP files here for testing.
 
-`as1-assembly.stp` : assemblage AS1 (plaques, équerres, tige, 6 boulons et 8 écrous instanciés), issu des exemples
-pythonocc (licence LGPL) ; sert à tester l'arbre d'assemblage, les instances et les couleurs STEP.
+`as1-assembly.stp`: AS1 assembly (plates, brackets, rod, 6 bolts and 8 nuts instanced), from the pythonocc examples (LGPL licence); used to test the assembly tree, instances and STEP colours.

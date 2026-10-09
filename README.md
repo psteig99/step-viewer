@@ -5,154 +5,152 @@
 Open, inspect and analyse CAD **STEP** files for packaging work, without a CAD licence: 3D viewer with dimension
 lines, section cuts at any angle, wall-thickness estimate, mass per material, carton/pallet packing, assembly tree,
 exports, and a Claude-powered page that analyses saved section views. Runs as a Python CLI, a shared web server,
-or a single HTML file. Full French documentation follows.
+or a single HTML file. Full documentation follows.
 
 ![architecture](docs/architecture.png)
 
 ---
 
+**Web application** for reading, viewing and analysing CAD **STEP** (.step / .stp) files for packaging teams:
+drag-and-drop upload, 3D viewer in the browser with dimensions drawn on the part, measurement, section cut,
+exploded view, estimated volume and mass by material, carton/pallet packing, shareable exports and reports.
+Also includes a command line (batch processing, reports) and a desktop viewer.
 
-Application **web** de lecture, visualisation et analyse de fichiers CAD **STEP** (.step / .stp) pour les équipes packaging :
-dépôt par cliquer-glisser, visionneuse 3D dans le navigateur avec cotes dessinées sur la pièce, mesure, coupe,
-vue éclatée, volume et masse estimée par matériau, colisage carton / palette, exports et rapports partageables.
-S'y ajoutent une ligne de commande (traitement par lot, rapports) et une visionneuse de bureau.
+No CAD licence or conda required: the OpenCASCADE kernel is bundled via `cascadio` (pip). The browser needs
+no internet access (three.js is bundled with the application): works on a closed intranet.
 
-Aucune licence CAO ni conda : le noyau OpenCASCADE est embarqué via `cascadio` (pip). Le navigateur n'a besoin
-d'aucun accès internet (three.js est livré avec l'application) : fonctionne sur un intranet fermé.
+## Two ways to use it
 
-## Deux façons de l'utiliser
-
-| | Version autonome | Version serveur |
+| | Standalone version | Server version |
 |---|---|---|
-| Fichier | `standalone/step-viewer.html` (double-clic, mail, intranet) | `stepviewer web` sur un poste ou serveur |
-| Installation | aucune | Python + `pip install` |
-| Lecture STEP | dans le navigateur (WebAssembly) | sur le serveur (plus rapide sur gros assemblages) |
-| Données | ne quittent jamais le navigateur | restent sur votre serveur |
-| En plus | — | encombrement orienté, 3MF, rapport avec 3D intégrée, API REST, traitement par lot |
+| File | `standalone/step-viewer.html` (double-click, email, intranet) | `stepviewer web` on a workstation or server |
+| Installation | none | Python + `pip install` |
+| STEP reading | in the browser (WebAssembly) | on the server (faster for large assemblies) |
+| Data | never leaves the browser | stays on your server |
+| Extra | — | oriented footprint, 3MF, report with embedded 3D, REST API, batch processing |
 
-Pour démarrer tout de suite : ouvrir `standalone/step-viewer.html` et déposer un STEP.
+To get started immediately: open `standalone/step-viewer.html` and drop a STEP file onto it.
 
-## Application web (version serveur)
+## Web application (server version)
 
 ```bash
-# Windows : double-cliquer scripts\web.bat   |   macOS / Linux : ./scripts/web.sh
-# ou : stepviewer web --reseau
+# Windows: double-click scripts\web.bat   |   macOS / Linux: ./scripts/web.sh
+# or: stepviewer web --reseau
 ```
-Puis ouvrir http://localhost:8000 (ou http://ip-du-poste:8000 depuis un autre PC du réseau).
+Then open http://localhost:8000 (or http://machine-ip:8000 from another PC on the network).
 
-1. **Déposer** un ou plusieurs fichiers .step / .stp sur la page (glisser-déposer, bouton « Ouvrir », ou coller).
-2. La pièce s'affiche en 3D avec ses **cotes hors-tout** dessinées comme sur un plan ; les fichiers ouverts
-   apparaissent en onglets dans la barre du haut.
-3. Barre d'outils : vues (iso, dessus, face, côté), filaire, transparence, grille, **mesurer** (deux clics → distance et
-   dX/dY/dZ), **coupe** (plan X/Y/Z glissable, inversable ; la matière tranchée apparaît en ocre pour lire les
-   épaisseurs), **éclaté**, **capture PNG**.
-4. Panneau de droite : encombrement (et encombrement orienté minimal), volumes, **masse** selon le matériau choisi,
-   liste des pièces (afficher/masquer, cliquer pour mettre en évidence), **colisage** carton et palette en direct,
-   téléchargements (rapport HTML avec 3D intégrée, JSON, STL, OBJ, GLB, 3MF).
-5. **Comparer deux révisions** : ouvrez les deux fichiers, puis dans « Comparer avec une autre révision » choisissez la
-   référence ; elle se superpose en rouge translucide à la pièce courante et un tableau donne les écarts de cotes,
-   de volume et de surface.
+1. **Drop** one or more .step / .stp files onto the page (drag-and-drop, "Open" button, or paste).
+2. The part is displayed in 3D with its **overall dimensions** drawn as on a technical drawing; open files
+   appear as tabs in the top bar.
+3. Toolbar: views (iso, top, front, side), wireframe, transparency, grid, **measure** (two clicks → distance and
+   dX/dY/dZ), **section cut** (X/Y/Z plane, slidable, invertible; cut material appears in ochre to read wall thicknesses),
+   **exploded view**, **PNG capture**.
+4. Right panel: footprint (and minimal oriented footprint), volumes, **mass** based on the chosen material,
+   parts list (show/hide, click to highlight), **carton and pallet packing** live,
+   downloads (HTML report with embedded 3D, JSON, STL, OBJ, GLB, 3MF).
+5. **Compare two revisions**: open both files, then under "Compare with another revision" choose the reference;
+   it is overlaid in translucent red on the current part and a table shows the dimension, volume and surface differences.
 
-Protection par mot de passe (recommandée dès que l'outil est accessible à plusieurs postes) :
-`stepviewer web --reseau --mot-de-passe secret` ou variable d'environnement `STEPVIEWER_PASSWORD`. Le navigateur
-demande alors le mot de passe (l'identifiant est libre).
+Password protection (recommended when the tool is accessible to multiple workstations):
+`stepviewer web --reseau --mot-de-passe secret` or environment variable `STEPVIEWER_PASSWORD`. The browser
+then prompts for the password (the username is free).
 
-Raccourcis clavier : I X Y Z vues · R recadrer · W filaire · T transparence · B cotes · M mesurer · P coupe · F capture · Échap.
+Keyboard shortcuts: I X Y Z views · R re-fit · W wireframe · T transparency · B dimensions · M measure · P section cut · F capture · Esc.
 
-API REST documentée sur http://localhost:8000/api/docs (upload, analyse, exports, colisage) pour brancher
-d'autres outils. Les fichiers restent sur le serveur, dans un dossier temporaire purgé après 6 h d'inactivité.
+REST API documented at http://localhost:8000/api/docs (upload, analysis, exports, packing) to connect
+other tools. Files remain on the server in a temporary folder purged after 6 h of inactivity.
 
-Déploiement sur un serveur interne : `uvicorn stepviewer.server:app --host 0.0.0.0 --port 8000`
-(derrière un reverse proxy HTTPS si besoin ; définir `STEPVIEWER_PASSWORD` pour exiger un mot de passe).
+Deployment on an internal server: `uvicorn stepviewer.server:app --host 0.0.0.0 --port 8000`
+(behind an HTTPS reverse proxy if needed; set `STEPVIEWER_PASSWORD` to require a password).
 
-## Installation (une fois)
+## Installation (once)
 
 ```bash
-# Windows : double-cliquer scripts\install.bat
-# macOS / Linux :
+# Windows: double-click scripts\install.bat
+# macOS / Linux:
 ./scripts/install.sh
 ```
-Prérequis : Python 3.10+ (https://www.python.org, cocher « Add to PATH » sous Windows).
+Prerequisite: Python 3.10+ (https://www.python.org, check "Add to PATH" on Windows).
 
-Installation manuelle : `pip install -e ".[web,dev]"` dans le dossier.
+Manual installation: `pip install -e ".[web,dev]"` in the project folder.
 
-## Utilisation rapide
+## Quick reference
 
-| Besoin | Commande |
+| Need | Command |
 |---|---|
-| Ouvrir la visionneuse (boîte de dialogue) | `stepviewer` ou `scripts\stepviewer.bat` |
-| Visualiser un fichier | `stepviewer view piece.step -m pet` |
-| Rapport texte seul | `stepviewer info piece.step -m hdpe --json piece.json` |
-| Rapport HTML autonome avec 3D (à envoyer par mail) | `stepviewer report piece.step -m pet` |
-| Export STL / OBJ / GLB / 3MF | `stepviewer export piece.step piece.stl` (`--parts` : un fichier par pièce) |
-| Analyser un dossier entier → CSV Excel | `stepviewer batch dossier_step/ --html -m pet` |
-| Colisage : unités par carton et cartons par palette | `stepviewer fit piece.step --carton 400x300x250 --jeu 2 --palette euro -m pet` |
-| Application web pour l'équipe | `stepviewer web --reseau` puis http://ip-du-poste:8000 |
-| Matériaux connus | `stepviewer materials` |
+| Open the viewer (file dialog) | `stepviewer` or `scripts\stepviewer.bat` |
+| View a file | `stepviewer view piece.step -m pet` |
+| Text report only | `stepviewer info piece.step -m hdpe --json piece.json` |
+| Standalone HTML report with embedded 3D (to send by email) | `stepviewer report piece.step -m pet` |
+| Export STL / OBJ / GLB / 3MF | `stepviewer export piece.step piece.stl` (`--parts`: one file per part) |
+| Analyse an entire folder → Excel CSV | `stepviewer batch dossier_step/ --html -m pet` |
+| Packing: units per carton and cartons per pallet | `stepviewer fit piece.step --carton 400x300x250 --jeu 2 --palette euro -m pet` |
+| Web application for the team | `stepviewer web --reseau` then http://machine-ip:8000 |
+| Known materials | `stepviewer materials` |
 
-Options communes : `-m/--material` (pet, hdpe, pp, verre, carton, aluminium…), `-d/--density` (g/cm³ libre),
-`--tol` (finesse de maillage en mm, défaut 0.2 ; 0.5 pour des fichiers plus légers).
+Common options: `-m/--material` (pet, hdpe, pp, glass, cardboard, aluminium…), `-d/--density` (free g/cm³),
+`--tol` (mesh fineness in mm, default 0.2; 0.5 for lighter files).
 
-## Visionneuse de bureau (optionnelle) – raccourcis
+## Desktop viewer (optional) – keyboard shortcuts
 
-| Touche | Action |
+| Key | Action |
 |---|---|
-| W / S | filaire / surfaces |
-| T | transparence (voir le produit dans son étui) |
-| B / O | boîte englobante / boîte englobante **orientée** minimale |
-| X Y Z / I / R | vues dessus, face, côté / isométrique / recadrer |
-| E / D / A | éclaté + / – / annuler |
-| M puis clic **droit** sur 2 points | mesure : distance et dX dY dZ en mm (C : effacer) |
-| P / N | plan de coupe / changer l'axe de coupe |
-| 1…9 / 0 | isoler une pièce / tout afficher |
-| F | capture d'écran PNG haute résolution |
-| H / Q | aide / quitter |
+| W / S | wireframe / surfaces |
+| T | transparency (see the product inside its packaging) |
+| B / O | bounding box / minimal **oriented** bounding box |
+| X Y Z / I / R | top, front, side views / isometric / re-fit |
+| E / D / A | exploded + / – / cancel |
+| M then **right-click** on 2 points | measurement: distance and dX dY dZ in mm (C: clear) |
+| P / N | section plane / change section axis |
+| 1…9 / 0 | isolate a part / show all |
+| F | high-resolution PNG screenshot |
+| H / Q | help / quit |
 
-Souris : clic gauche rotation, molette zoom, clic milieu (ou Maj + gauche) translation.
+Mouse: left-click rotate, scroll wheel zoom, middle-click (or Shift + left) pan.
 
-## Ce que calcule l'analyse
+## What the analysis computes
 
-- **Hors-tout** X × Y × Z dans le repère du fichier, et **encombrement orienté** (boîte minimale) si la pièce est modélisée de travers.
-- **Volume matière** (maillage fermé requis — signalé sinon), **volume englobant**, **taux de remplissage**, **surface**.
-- **Masse estimée** = volume × densité du matériau choisi (table modifiable dans `stepviewer/analysis.py`).
-- **Épaisseur de paroi estimée** (2·V/S) pour les corps creux : bouteilles, pots, étuis.
-- **Alertes** : unité suspecte (pouces / mètres), pièce inclinée, maillage ouvert, chevauchement de pièces dans un assemblage.
-- **Colisage** : meilleure orientation parmi les 6, jeu réglable, option « debout » (pas de rotation), palettes euro / iso / US / demi-euro.
+- **Overall dims** X × Y × Z in the file coordinate system, and **oriented footprint** (minimal bounding box) if the part is modelled at an angle.
+- **Material volume** (closed mesh required — flagged otherwise), **bounding volume**, **fill rate**, **surface area**.
+- **Est. mass** = volume × density of the chosen material (table editable in `stepviewer/analysis.py`).
+- **Estimated wall thickness** (2·V/S) for hollow bodies: bottles, jars, cases.
+- **Warnings**: suspicious unit (inches / metres), tilted part, open mesh, overlapping parts in an assembly.
+- **Packing**: best orientation among 6, adjustable clearance, "upright only" option (no rotation), euro / iso / US / half-euro pallets.
 
-## Structure du projet
+## Project structure
 
 ```
 stepviewer/
-  loader.py     lecture STEP -> maillages mm (cache, nettoyage)
-  analysis.py   dimensions, volumes, masse, épaisseur, matériaux
-  fit.py        colisage carton / palette
-  report.py     rapports texte, JSON, CSV, HTML + 3D intégrée
+  loader.py     STEP reading -> mm meshes (cache, cleanup)
+  analysis.py   dimensions, volumes, mass, wall thickness, materials
+  fit.py        carton / pallet packing
+  report.py     text, JSON, CSV, HTML + embedded 3D reports
   export.py     STL / OBJ / GLB / 3MF / PLY
-  server.py     serveur web FastAPI (API + interface)
-  static/       interface web : index.html, app.js, app.css, three.js embarqué
-  viewer.py     visionneuse 3D de bureau (pyvista)
-  cli.py        ligne de commande
+  server.py     FastAPI web server (API + interface)
+  static/       web interface: index.html, app.js, app.css, bundled three.js
+  viewer.py     desktop 3D viewer (pyvista)
+  cli.py        command line
 tests/          pytest (python -m pytest)
-samples/        fichier d'exemple
-scripts/        installation et lancement Windows / macOS / Linux
+samples/        sample file
+scripts/        installation and launch scripts for Windows / macOS / Linux
 ```
 
-## Limites connues
+## Known limitations
 
-- Lecture par tessellation : pas d'arbre de construction ni d'édition de la géométrie ; les cotes sont celles du maillage (précision = `--tol`).
-- Les unités sont supposées en millimètres après conversion ; une alerte s'affiche si les dimensions semblent incohérentes.
-- L'estimation d'épaisseur est globale par pièce ; pour une cartographie fine, utiliser le plan de coupe + la mesure.
-- Le colisage est un calcul en grille mono-orientation (pré-dimensionnement), sans prise en compte des formes réelles.
-- L'authentification web est un mot de passe unique partagé (HTTP Basic) : suffisant en interne, à mettre derrière
-  HTTPS si l'outil sort du réseau local.
+- Reading by tessellation: no construction tree or geometry editing; dimensions are those of the mesh (precision = `--tol`).
+- Units are assumed to be millimetres after conversion; a warning is shown if dimensions seem inconsistent.
+- The wall thickness estimate is global per part; for a detailed map, use the section plane + measurement.
+- Packing is a single-orientation grid calculation (pre-sizing), without accounting for actual part shapes.
+- Web authentication is a single shared password (HTTP Basic): sufficient internally, put behind
+  HTTPS if the tool leaves the local network.
 
-## Documentation technique
+## Technical documentation
 
-Voir [docs/TECHNICAL.md](docs/TECHNICAL.md) (en anglais) : lecture STEP, moteur d'analyse, serveur, visionneuse, version navigateur, page coupe + IA, arbre d'assemblage, tests.
+See [docs/TECHNICAL.md](docs/TECHNICAL.md): STEP reading, analysis engine, server, viewer, browser version, section cut + AI, assembly tree, tests.
 
 ## Tests
 
 ```bash
-python -m pytest                 # moteur, rapports, API web
-cd tests/ui && npm install && npm test   # interface dans un Chromium headless (serveur lancé sur le port 8765)
+python -m pytest                 # engine, reports, web API
+cd tests/ui && npm install && npm test   # interface in a headless Chromium (server started on port 8765)
 ```

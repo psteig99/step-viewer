@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "stepviewer"
 version = "1.0.0"
-description = "Visualiseur et analyseur de fichiers CAD STEP orienté packaging"
+description = "STEP CAD file viewer and analyser for packaging"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

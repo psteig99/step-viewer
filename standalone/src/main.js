@@ -8,7 +8,7 @@ import occtimportjs from "occt-import-js";
 import { MATERIALS, PALLETS, analysePart, analyseModel, weldVertices, fitInContainer, fitOnPallet } from "./engine.js";
 
 /* ------------------------------------------------------------------------ */
-/*  État                                                                     */
+/*  State                                                                    */
 /* ------------------------------------------------------------------------ */
 const PALETTE = [0x3b6fb6, 0xd1495b, 0x6aa84f, 0x8e63b5, 0xec8f2a, 0x30a5b8, 0x7f7f7f, 0xc9a227, 0x1f8a70, 0xb85c38];
 const INNER_COLOR = 0xc08a3e;
@@ -26,16 +26,16 @@ const el = {
 };
 
 /* ------------------------------------------------------------------------ */
-/*  Lecteur STEP (OpenCASCADE / WebAssembly, embarqué dans la page)          */
+/*  STEP reader (OpenCASCADE / WebAssembly, embedded in the page)           */
 /* ------------------------------------------------------------------------ */
 let occtPromise = null;
 function getOcct() {
   if (occtPromise) return occtPromise;
   occtPromise = (async () => {
-    el.loadingText.textContent = "Initialisation du lecteur STEP (première fois seulement)…";
+    el.loadingText.textContent = "Initializing STEP reader (first load only)…";
     const b64 = document.getElementById("occt-wasm").textContent.trim();
     const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    if (typeof DecompressionStream === "undefined") throw new Error("Navigateur trop ancien : il faut Chrome 80+, Edge 80+, Firefox 113+ ou Safari 16.4+.");
+    if (typeof DecompressionStream === "undefined") throw new Error("Browser too old: requires Chrome 80+, Edge 80+, Firefox 113+ or Safari 16.4+.");
     const stream = new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"));
     const wasmBinary = await new Response(stream).arrayBuffer();
     return occtimportjs({ wasmBinary });
@@ -46,15 +46,15 @@ function getOcct() {
 
 async function parseStep(file) {
   const occt = await getOcct();
-  el.loadingText.textContent = `Lecture de ${file.name} (${fmtBytes(file.size)})…`;
-  await new Promise((r) => setTimeout(r, 30)); // laisse le navigateur afficher le message
+  el.loadingText.textContent = `Reading ${file.name} (${fmtBytes(file.size)})…`;
+  await new Promise((r) => setTimeout(r, 30)); // let the browser display the message
   const buf = new Uint8Array(await file.arrayBuffer());
   const t0 = performance.now();
   const res = occt.ReadStepFile(buf, { linearUnit: "millimeter", linearDeflectionType: "bounding_box_ratio", linearDeflection: state.quality, angularDeflection: 0.3 });
-  if (!res.success || !res.meshes.length) throw new Error(`${file.name} : fichier STEP illisible ou sans solide.`);
+  if (!res.success || !res.meshes.length) throw new Error(`${file.name}: unreadable STEP file or no solid.`);
   const used = new Map(), parts = [], group = new THREE.Group(), partMeshes = new Map();
   res.meshes.forEach((m, i) => {
-    let name = (m.name || "piece").replace(/\//g, "_").slice(0, 60);
+    let name = (m.name || "part").replace(/\//g, "_").slice(0, 60);
     used.set(name, (used.get(name) || 0) + 1);
     if (used.get(name) > 1) name = `${name}_${used.get(name)}`;
     const pos = new Float32Array(m.attributes.position.array), idx = new Uint32Array(m.index.array);
@@ -77,7 +77,7 @@ async function parseStep(file) {
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Scène three.js                                                           */
+/*  three.js scene                                                           */
 /* ------------------------------------------------------------------------ */
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -108,12 +108,12 @@ new ResizeObserver(resize).observe(el.viewport); resize();
 (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera); })();
 
 /* ------------------------------------------------------------------------ */
-/*  Chargement                                                               */
+/*  Loading                                                                  */
 /* ------------------------------------------------------------------------ */
 const isStep = (f) => /\.(step|stp)$/i.test(f.name);
 async function handleFiles(files) {
   const list = [...files].filter(isStep);
-  if (!list.length) return toast("Aucun fichier .step / .stp dans la sélection.", true);
+  if (!list.length) return toast("No .step / .stp file in the selection.", true);
   el.loading.hidden = false;
   try {
     for (const f of list) {
@@ -130,7 +130,7 @@ async function handleFiles(files) {
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Affichage d'un modèle                                                    */
+/*  Displaying a model                                                       */
 /* ------------------------------------------------------------------------ */
 function showModel(id) {
   const m = state.models.get(id); if (!m) return;
@@ -175,7 +175,7 @@ function buildDimensions(box, span) {
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Vues, drapeaux                                                           */
+/*  Views, flags                                                             */
 /* ------------------------------------------------------------------------ */
 function setView(name) {
   const m = cur(); if (!m) return;
@@ -200,7 +200,7 @@ function applyFlags() {
   el.viewport.classList.toggle("measuring", state.flags.measure);
   el.clipPanel.hidden = !state.flags.clip;
   document.querySelectorAll("[data-toggle]").forEach((b) => b.setAttribute("aria-pressed", String(!!state.flags[b.dataset.toggle])));
-  if (state.flags.measure) hint("Mesure : cliquez deux points sur la pièce. Échap pour quitter."); else if (!state.flags.clip) hint(null);
+  if (state.flags.measure) hint("Measure: click two points on the part. Esc to quit."); else if (!state.flags.clip) hint(null);
 }
 
 function setExplode(v) {
@@ -216,11 +216,11 @@ function updateClip() {
   const lo = m.box.min[a], hi = m.box.max[a], pos = lo + (hi - lo) * state.clip.pos;
   state.clip.plane.normal.copy(n); state.clip.plane.constant = state.clip.flip ? -pos : pos;
   el.clipValue.textContent = `${a.toUpperCase()} = ${fmt(pos)} mm`;
-  if (state.flags.clip) hint("Coupe : déplacez le curseur pour traverser la pièce. P pour quitter.");
+  if (state.flags.clip) hint("Section: move the slider to traverse the part. P to quit.");
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Mesure & sélection                                                       */
+/*  Measure & selection                                                      */
 /* ------------------------------------------------------------------------ */
 const raycaster = new THREE.Raycaster(); let downPos = null;
 renderer.domElement.addEventListener("pointerdown", (e) => { downPos = [e.clientX, e.clientY]; });
@@ -255,36 +255,36 @@ function focusPart(name, m, fromViewport) {
   document.querySelectorAll(".part").forEach((li) => li.classList.toggle("focus", li.dataset.name === name));
   m.parts.forEach((mesh, n) => mesh.material.emissive.setHex(n === name ? 0x333333 : 0));
   if (fromViewport) document.querySelector(`.part[data-name="${CSS.escape(name)}"]`)?.scrollIntoView({ block: "nearest" });
-  const d = m.analysis.details.find((p) => p.nom === name);
-  if (d) hint(`${name} : ${d.dimensions_mm.map(fmt).join(" × ")} mm${d.volume_cm3 != null ? ` · ${fmt(d.volume_cm3)} cm³` : ""}`);
+  const d = m.analysis.details.find((p) => p.name === name);
+  if (d) hint(`${name}: ${d.dimensions_mm.map(fmt).join(" × ")} mm${d.volume_cm3 != null ? ` · ${fmt(d.volume_cm3)} cm³` : ""}`);
   clearTimeout(focusPart.t); focusPart.t = setTimeout(() => { m.parts.forEach((mesh) => mesh.material.emissive.setHex(0)); document.querySelectorAll(".part.focus").forEach((x) => x.classList.remove("focus")); if (!state.flags.measure && !state.flags.clip) hint(null); }, 2500);
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Panneau                                                                  */
+/*  Panel                                                                    */
 /* ------------------------------------------------------------------------ */
 function fillPanel(m) {
   const a = m.analysis;
   $("#file-name").textContent = m.name;
-  $("#file-meta").textContent = `${fmtBytes(m.size)} · ${a.pieces} pièce${a.pieces > 1 ? "s" : ""} · ${a.triangles.toLocaleString("fr-FR")} triangles · lu en ${(a.temps_lecture_ms / 1000).toFixed(1)} s`;
+  $("#file-meta").textContent = `${fmtBytes(m.size)} · ${a.parts} part${a.parts > 1 ? "s" : ""} · ${a.triangles.toLocaleString("en-US")} triangles · read in ${(a.temps_lecture_ms / 1000).toFixed(1)} s`;
   const w = $("#warnings"); w.innerHTML = "";
-  const warns = [...a.avertissements];
-  if (a.overlaps.length) warns.push(`${a.overlaps.length} chevauchement(s) d'encombrement entre pièces : ${a.overlaps.slice(0, 4).map(([x, y]) => `${x} ↔ ${y}`).join(", ")}`);
+  const warns = [...a.warnings];
+  if (a.overlaps.length) warns.push(`${a.overlaps.length} bounding box overlap(s) between parts: ${a.overlaps.slice(0, 4).map(([x, y]) => `${x} ↔ ${y}`).join(", ")}`);
   warns.forEach((t) => { const d = document.createElement("div"); d.className = "warn"; d.textContent = t; w.appendChild(d); });
   const [L, l, h] = a.dimensions_mm;
   $("#dims").innerHTML = [["X", L], ["Y", l], ["Z", h]].map(([ax, v]) => `<div class="dim-cell"><div class="axis">${ax}</div><div class="val">${fmt(v)}<small>mm</small></div></div>`).join("");
   const sel = $("#material");
-  sel.innerHTML = `<option value="">— aucun —</option>` + Object.entries(MATERIALS).map(([k, v]) => `<option value="${k}">${k} (${v})</option>`).join("");
+  sel.innerHTML = `<option value="">— none —</option>` + Object.entries(MATERIALS).map(([k, v]) => `<option value="${k}">${k} (${v})</option>`).join("");
   sel.value = m.material; $("#density").value = m.density;
   renderFacts(m);
-  $("#parts-count").textContent = `(${a.pieces})`;
+  $("#parts-count").textContent = `(${a.parts})`;
   const ul = $("#parts"); ul.innerHTML = "";
   a.details.forEach((p) => {
-    const mesh = m.parts.get(p.nom), color = `#${mesh.userData.baseColor.toString(16).padStart(6, "0")}`;
-    const li = document.createElement("li"); li.className = "part" + (p.etanche ? "" : " open-mesh"); li.dataset.name = p.nom;
-    li.innerHTML = `<input type="checkbox" ${mesh.visible ? "checked" : ""} aria-label="Afficher ${p.nom}"><span class="sw" style="background:${color}"></span><span class="nm" title="${p.nom}">${p.nom}</span><span class="dm">${p.dimensions_mm.map(fmt).join(" × ")}</span>`;
+    const mesh = m.parts.get(p.name), color = `#${mesh.userData.baseColor.toString(16).padStart(6, "0")}`;
+    const li = document.createElement("li"); li.className = "part" + (p.watertight ? "" : " open-mesh"); li.dataset.name = p.name;
+    li.innerHTML = `<input type="checkbox" ${mesh.visible ? "checked" : ""} aria-label="Show ${p.name}"><span class="sw" style="background:${color}"></span><span class="nm" title="${p.name}">${p.name}</span><span class="dm">${p.dimensions_mm.map(fmt).join(" × ")}</span>`;
     li.querySelector("input").addEventListener("change", (e) => { mesh.visible = e.target.checked; });
-    li.querySelector(".nm").addEventListener("click", () => focusPart(p.nom, m, false));
+    li.querySelector(".nm").addEventListener("click", () => focusPart(p.name, m, false));
     ul.appendChild(li);
   });
   renderCompareSelect(m);
@@ -293,10 +293,10 @@ function fillPanel(m) {
 }
 
 function renderFacts(m) {
-  const a = m.analysis, dens = density(m), mass = dens && a.volume_matiere_cm3 ? a.volume_matiere_cm3 * dens : null;
-  const rows = [["Volume matière", `${fmt(a.volume_matiere_cm3)} cm³`], ["Volume englobant", `${fmt(a.volume_englobant_cm3)} cm³`], ["Taux de remplissage", `${fmt(a.taux_remplissage_pct, 1)} %`], ["Surface", `${fmt(a.surface_cm2)} cm²`], ["Masse estimée", mass != null ? `${fmt(mass, 1)} g` : "—"]];
-  const thick = a.details.map((d) => d.epaisseur_mm_estimee).filter(Boolean);
-  if (thick.length) rows.push(["Épaisseur de paroi estimée", `${thick.map((t) => fmt(t)).join(" / ")} mm`]);
+  const a = m.analysis, dens = density(m), mass = dens && a.material_volume_cm3 ? a.material_volume_cm3 * dens : null;
+  const rows = [["Material volume", `${fmt(a.material_volume_cm3)} cm³`], ["Bounding volume", `${fmt(a.bounding_volume_cm3)} cm³`], ["Fill rate", `${fmt(a.fill_rate_pct, 1)} %`], ["Surface", `${fmt(a.surface_cm2)} cm²`], ["Estimated mass", mass != null ? `${fmt(mass, 1)} g` : "—"]];
+  const thick = a.details.map((d) => d.wall_thickness_mm).filter(Boolean);
+  if (thick.length) rows.push(["Estimated wall thickness", `${thick.map((t) => fmt(t)).join(" / ")} mm`]);
   $("#facts").innerHTML = rows.map(([k, v], i) => `<dt>${k}</dt><dd class="${i === 4 ? "strong" : ""}">${v}</dd>`).join("");
   m.mass_g = mass;
 }
@@ -308,25 +308,25 @@ function computeFit() {
     const carton = [$("#fit-L"), $("#fit-l"), $("#fit-h")].map((i) => parseFloat(i.value) || 1);
     const c = fitInContainer(m.analysis.dimensions_mm, carton, parseFloat($("#fit-jeu").value) || 0, $("#fit-rot").checked);
     const p = fitOnPallet(carton, $("#fit-pallet").value || "euro", parseFloat($("#fit-hmax").value) || 1800);
-    const upp = p.quantite * c.quantite;
-    const mass = m.mass_g ? ` · ${fmt((c.quantite * m.mass_g) / 1000)} kg de produit par carton, ${fmt((upp * m.mass_g) / 1000, 1)} kg par palette` : "";
+    const upp = p.quantity * c.quantity;
+    const mass = m.mass_g ? ` · ${fmt((c.quantity * m.mass_g) / 1000)} kg product per box, ${fmt((upp * m.mass_g) / 1000, 1)} kg per pallet` : "";
     $("#fit-result").innerHTML = `
-      <div class="fit-cell"><div class="k">Unités par carton</div><div class="v">${c.quantite} <small>${c.par_axe.join(" × ")}</small></div></div>
-      <div class="fit-cell"><div class="k">Occupation du carton</div><div class="v">${fmt(c.taux_occupation_pct, 1)} %</div></div>
-      <div class="fit-cell"><div class="k">Cartons par palette</div><div class="v">${p.quantite} <small>${p.par_axe.join(" × ")}</small></div></div>
-      <div class="fit-cell"><div class="k">Unités par palette</div><div class="v">${upp.toLocaleString("fr-FR")}</div></div>
-      <div class="fit-note">Unité posée en ${c.orientation_mm.map(fmt).join(" × ")} mm${mass}.</div>`;
+      <div class="fit-cell"><div class="k">Units per box</div><div class="v">${c.quantity} <small>${c.per_axis.join(" × ")}</small></div></div>
+      <div class="fit-cell"><div class="k">Box fill rate</div><div class="v">${fmt(c.fill_rate_pct, 1)} %</div></div>
+      <div class="fit-cell"><div class="k">Boxes per pallet</div><div class="v">${p.quantity} <small>${p.per_axis.join(" × ")}</small></div></div>
+      <div class="fit-cell"><div class="k">Units per pallet</div><div class="v">${upp.toLocaleString("en-US")}</div></div>
+      <div class="fit-note">Unit laid in ${c.orientation_mm.map(fmt).join(" × ")} mm${mass}.</div>`;
   } catch (err) { $("#fit-result").innerHTML = `<div class="fit-note">${err.message}</div>`; }
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Comparaison                                                              */
+/*  Comparison                                                               */
 /* ------------------------------------------------------------------------ */
 function renderCompareSelect(m) {
   const block = $("#compare-block"), sel = $("#compare");
   const others = [...state.models.values()].filter((x) => x.id !== m.id);
   block.hidden = others.length === 0;
-  sel.innerHTML = `<option value="">— aucune —</option>` + others.map((x) => `<option value="${x.id}">${x.name}</option>`).join("");
+  sel.innerHTML = `<option value="">— none —</option>` + others.map((x) => `<option value="${x.id}">${x.name}</option>`).join("");
   sel.value = others.some((x) => x.id === m.compareWith) ? m.compareWith : "";
   applyCompare(m);
 }
@@ -339,18 +339,18 @@ function applyCompare(m) {
     o.material = new THREE.MeshStandardMaterial({ color: 0xd1495b, transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: state.flags.clip ? [state.clip.plane] : [] }); });
   compareRoot.add(ghost);
   const a = m.analysis, b = ref.analysis;
-  const rows = [["X (mm)", a.dimensions_mm[0], b.dimensions_mm[0]], ["Y (mm)", a.dimensions_mm[1], b.dimensions_mm[1]], ["Z (mm)", a.dimensions_mm[2], b.dimensions_mm[2]], ["Volume matière (cm³)", a.volume_matiere_cm3, b.volume_matiere_cm3], ["Surface (cm²)", a.surface_cm2, b.surface_cm2], ["Pièces", a.pieces, b.pieces]];
+  const rows = [["X (mm)", a.dimensions_mm[0], b.dimensions_mm[0]], ["Y (mm)", a.dimensions_mm[1], b.dimensions_mm[1]], ["Z (mm)", a.dimensions_mm[2], b.dimensions_mm[2]], ["Material volume (cm³)", a.material_volume_cm3, b.material_volume_cm3], ["Surface (cm²)", a.surface_cm2, b.surface_cm2], ["Parts", a.parts, b.parts]];
   const cell = (v, r) => { const d = v - r, cls = Math.abs(d) < 0.005 ? "" : d > 0 ? " plus" : " minus"; return `<td class="delta${cls}">${d > 0 ? "+" : ""}${fmt(d)}</td>`; };
-  out.innerHTML = `<table><tr><th></th><td>actuel</td><td>référence</td><td>écart</td></tr>` + rows.map(([k, v, r]) => `<tr><th>${k}</th><td>${fmt(v)}</td><td>${fmt(r)}</td>${cell(v, r)}</tr>`).join("") +
-    `</table><div class="compare-legend"><i style="background:#3b6fb6"></i>actuel &nbsp; <i style="background:#d1495b;opacity:.6"></i>référence en superposition</div>`;
+  out.innerHTML = `<table><tr><th></th><td>current</td><td>reference</td><td>delta</td></tr>` + rows.map(([k, v, r]) => `<tr><th>${k}</th><td>${fmt(v)}</td><td>${fmt(r)}</td>${cell(v, r)}</tr>`).join("") +
+    `</table><div class="compare-legend"><i style="background:#3b6fb6"></i>current &nbsp; <i style="background:#d1495b;opacity:.6"></i>reference overlaid</div>`;
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Onglets                                                                  */
+/*  Tabs                                                                     */
 /* ------------------------------------------------------------------------ */
 function addTab(id, name) {
   const b = document.createElement("div"); b.className = "model-tab"; b.dataset.id = id; b.setAttribute("role", "button"); b.tabIndex = 0;
-  b.innerHTML = `<span title="${name}">${name}</span><button class="x" title="Fermer" aria-label="Fermer ${name}">×</button>`;
+  b.innerHTML = `<span title="${name}">${name}</span><button class="x" title="Close" aria-label="Close ${name}">×</button>`;
   b.addEventListener("click", (e) => { if (e.target.classList.contains("x")) closeModel(id); else showModel(id); });
   b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showModel(id); } });
   el.models.appendChild(b);
@@ -368,7 +368,7 @@ function closeModel(id) {
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Exports (tout se fait dans le navigateur)                                */
+/*  Exports (all done in the browser)                                        */
 /* ------------------------------------------------------------------------ */
 function download(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
 function exportGroup(m) { const g = new THREE.Group(); m.parts.forEach((mesh) => { const c = new THREE.Mesh(mesh.geometry, new THREE.MeshStandardMaterial({ color: mesh.userData.baseColor })); c.name = mesh.name; g.add(c); }); return g; }
@@ -380,9 +380,9 @@ async function exportAs(kind) {
   if (kind === "stl") download(new Blob([new STLExporter().parse(g, { binary: true })], { type: "model/stl" }), `${stem(m)}.stl`);
   else if (kind === "obj") download(new Blob([new OBJExporter().parse(g)], { type: "text/plain" }), `${stem(m)}.obj`);
   else if (kind === "glb") new GLTFExporter().parse(g, (buf) => download(new Blob([buf], { type: "model/gltf-binary" }), `${stem(m)}.glb`), (e) => toast(String(e), true), { binary: true });
-  else if (kind === "json") download(new Blob([JSON.stringify({ ...m.analysis, materiau: m.material || null, densite_g_cm3: density(m), masse_g: m.mass_g ?? null }, null, 2)], { type: "application/json" }), `${stem(m)}_analyse.json`);
+  else if (kind === "json") download(new Blob([JSON.stringify({ ...m.analysis, material: m.material || null, density_g_cm3: density(m), mass_g: m.mass_g ?? null }, null, 2)], { type: "application/json" }), `${stem(m)}_analysis.json`);
   else if (kind === "png") screenshot();
-  else if (kind === "html") download(new Blob([buildReport(m)], { type: "text/html" }), `${stem(m)}_rapport.html`);
+  else if (kind === "html") download(new Blob([buildReport(m)], { type: "text/html" }), `${stem(m)}_report.html`);
 }
 
 function screenshot() {
@@ -390,26 +390,26 @@ function screenshot() {
   renderer.render(scene, camera);
   const a = document.createElement("a"); a.href = renderer.domElement.toDataURL("image/png");
   a.download = `${stem(m)}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`; a.click();
-  toast("Capture enregistrée (les étiquettes de cotes ne sont pas incluses).");
+  toast("Screenshot saved (dimension labels are not included).");
 }
 
 function buildReport(m) {
   const a = m.analysis, e = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   renderer.render(scene, camera); const img = renderer.domElement.toDataURL("image/png");
-  const kpi = [["Hors-tout", `${a.dimensions_mm.map(fmt).join(" × ")} mm`], ["Volume matière", `${fmt(a.volume_matiere_cm3)} cm³`], ["Volume englobant", `${fmt(a.volume_englobant_cm3)} cm³`], ["Taux de remplissage", `${fmt(a.taux_remplissage_pct, 1)} %`], ["Surface", `${fmt(a.surface_cm2)} cm²`]];
-  if (m.mass_g != null) kpi.push(["Masse estimée", `${fmt(m.mass_g, 1)} g (${e(m.material || `${m.density} g/cm³`)})`]);
-  const rows = a.details.map((p) => `<tr><td>${e(p.nom)}</td><td>${p.dimensions_mm.map(fmt).join(" × ")}</td><td>${p.volume_cm3 ?? "—"}</td><td>${p.surface_cm2}</td><td>${p.epaisseur_mm_estimee ?? "—"}</td><td>${p.etanche ? "oui" : "<b style=color:#b42318>non</b>"}</td></tr>`).join("");
-  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Rapport – ${e(m.name)}</title><style>body{font:15px/1.5 system-ui,sans-serif;color:#1b2430;margin:0;background:#f6f8fb}.w{max-width:1000px;margin:0 auto;padding:28px 20px}h1{font-size:22px;margin:0 0 4px}.s{color:#5b6475;margin-bottom:20px}.k{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:20px}.k div{background:#fff;border:1px solid #e3e7ee;border-radius:8px;padding:12px 14px}.k b{display:block;font-size:19px}.k span{font-size:12px;color:#5b6475}img{max-width:100%;border:1px solid #e3e7ee;border-radius:8px;background:#fff}table{width:100%;border-collapse:collapse;font-size:14px;margin-top:20px;background:#fff}th,td{padding:8px 10px;border-bottom:1px solid #e3e7ee;text-align:left}th{color:#5b6475;font-size:12px}.a{background:#fff7e6;border:1px solid #f5d08a;border-radius:8px;padding:10px 14px;margin-bottom:16px}</style></head><body><div class="w">
-<h1>${e(m.name)}</h1><div class="s">Rapport d'analyse packaging · ${a.pieces} pièce(s) · ${new Date().toLocaleString("fr-FR")}</div>
+  const kpi = [["Outer dimensions", `${a.dimensions_mm.map(fmt).join(" × ")} mm`], ["Material volume", `${fmt(a.material_volume_cm3)} cm³`], ["Bounding volume", `${fmt(a.bounding_volume_cm3)} cm³`], ["Fill rate", `${fmt(a.fill_rate_pct, 1)} %`], ["Surface", `${fmt(a.surface_cm2)} cm²`]];
+  if (m.mass_g != null) kpi.push(["Estimated mass", `${fmt(m.mass_g, 1)} g (${e(m.material || `${m.density} g/cm³`)})`]);
+  const rows = a.details.map((p) => `<tr><td>${e(p.name)}</td><td>${p.dimensions_mm.map(fmt).join(" × ")}</td><td>${p.volume_cm3 ?? "—"}</td><td>${p.surface_cm2}</td><td>${p.wall_thickness_mm ?? "—"}</td><td>${p.watertight ? "yes" : "<b style=color:#b42318>no</b>"}</td></tr>`).join("");
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Report – ${e(m.name)}</title><style>body{font:15px/1.5 system-ui,sans-serif;color:#1b2430;margin:0;background:#f6f8fb}.w{max-width:1000px;margin:0 auto;padding:28px 20px}h1{font-size:22px;margin:0 0 4px}.s{color:#5b6475;margin-bottom:20px}.k{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:20px}.k div{background:#fff;border:1px solid #e3e7ee;border-radius:8px;padding:12px 14px}.k b{display:block;font-size:19px}.k span{font-size:12px;color:#5b6475}img{max-width:100%;border:1px solid #e3e7ee;border-radius:8px;background:#fff}table{width:100%;border-collapse:collapse;font-size:14px;margin-top:20px;background:#fff}th,td{padding:8px 10px;border-bottom:1px solid #e3e7ee;text-align:left}th{color:#5b6475;font-size:12px}.a{background:#fff7e6;border:1px solid #f5d08a;border-radius:8px;padding:10px 14px;margin-bottom:16px}</style></head><body><div class="w">
+<h1>${e(m.name)}</h1><div class="s">Packaging analysis report · ${a.parts} part(s) · ${new Date().toLocaleString("en-US")}</div>
 <div class="k">${kpi.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
-${a.avertissements.length ? `<div class="a"><b>Points d'attention</b><ul>${a.avertissements.map((x) => `<li>${e(x)}</li>`).join("")}</ul></div>` : ""}
-<img src="${img}" alt="Vue 3D">
-<table><thead><tr><th>Pièce</th><th>Dimensions (mm)</th><th>Volume (cm³)</th><th>Surface (cm²)</th><th>Ép. paroi est. (mm)</th><th>Fermé</th></tr></thead><tbody>${rows}</tbody></table>
-<p style="color:#5b6475;font-size:12px;margin-top:24px">Généré par STEP Viewer. Volumes et masses calculés sur la tessellation du STEP ; épaisseur de paroi estimée par 2·V/S.</p></div></body></html>`;
+${a.warnings.length ? `<div class="a"><b>Points of attention</b><ul>${a.warnings.map((x) => `<li>${e(x)}</li>`).join("")}</ul></div>` : ""}
+<img src="${img}" alt="3D view">
+<table><thead><tr><th>Part</th><th>Dimensions (mm)</th><th>Volume (cm³)</th><th>Surface (cm²)</th><th>Est. wall thick. (mm)</th><th>Closed</th></tr></thead><tbody>${rows}</tbody></table>
+<p style="color:#5b6475;font-size:12px;margin-top:24px">Generated by STEP Viewer. Volumes and masses computed from the STEP tessellation; wall thickness estimated as 2·V/S.</p></div></body></html>`;
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Événements                                                               */
+/*  Events                                                                   */
 /* ------------------------------------------------------------------------ */
 ["dragenter", "dragover"].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); document.body.classList.add("dragging"); }));
 let dragLeaveTimer;
@@ -440,7 +440,7 @@ $("#material").addEventListener("change", (e) => { const m = cur(); if (!m) retu
 $("#density").addEventListener("input", (e) => { const m = cur(); if (!m) return; m.density = e.target.value; if (m.density) { m.material = ""; $("#material").value = ""; } renderFacts(m); computeFit(); });
 ["#fit-L", "#fit-l", "#fit-h", "#fit-jeu", "#fit-rot", "#fit-pallet", "#fit-hmax"].forEach((s) => $(s).addEventListener("input", debounce(computeFit, 200)));
 $("#downloads").addEventListener("click", (e) => { const b = e.target.closest("[data-export]"); if (b) exportAs(b.dataset.export); });
-$("#quality").addEventListener("change", (e) => { state.quality = parseFloat(e.target.value); toast("La finesse s'appliquera aux prochains fichiers ouverts."); });
+$("#quality").addEventListener("change", (e) => { state.quality = parseFloat(e.target.value); toast("The quality setting will apply to files opened next."); });
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, select, textarea")) return;
   const k = e.key.toLowerCase();
@@ -450,12 +450,12 @@ document.addEventListener("keydown", (e) => {
 
 /* ------------------------------------------------------------------------ */
 function cur() { return state.current ? state.models.get(state.current) : null; }
-function fmt(v, d = 2) { return Number(v).toLocaleString("fr-FR", { maximumFractionDigits: d }); }
-function fmtBytes(b) { return b < 1048576 ? `${(b / 1024).toFixed(0)} Ko` : `${(b / 1048576).toFixed(1)} Mo`; }
+function fmt(v, d = 2) { return Number(v).toLocaleString("en-US", { maximumFractionDigits: d }); }
+function fmtBytes(b) { return b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`; }
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 function hint(text) { el.hint.hidden = !text; el.hint.textContent = text || ""; }
 let toastTimer;
 function toast(msg, error = false) { el.toast.textContent = msg; el.toast.className = "toast" + (error ? " error" : ""); el.toast.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.toast.hidden = true), error ? 8000 : 3500); }
 el.layout.classList.add("no-panel");
-// Pré-initialise le lecteur en arrière-plan pour que le premier fichier s'ouvre vite.
+// Pre-initialise the reader in the background so the first file opens quickly.
 setTimeout(() => { getOcct().catch((e) => toast(e.message, true)); }, 400);

@@ -1,7 +1,7 @@
-"""Serveur web : API + interface (cliquer-glisser, visionneuse 3D, analyse, colisage).
+"""Web server: API + interface (drag-and-drop, 3D viewer, analysis, packing).
 
-Lancement : stepviewer web [--port 8000] [--reseau]
-            uvicorn stepviewer.server:app --reload       (développement)
+Launch: stepviewer web [--port 8000] [--network]
+        uvicorn stepviewer.server:app --reload       (development)
 """
 from __future__ import annotations
 
@@ -34,8 +34,8 @@ from .report import html_report, json_report
 log = logging.getLogger("stepviewer.server")
 STATIC = Path(__file__).with_name("static")
 MAX_UPLOAD_MB = 500
-MODEL_TTL_S = 6 * 3600       # les modèles sont oubliés après 6 h d'inactivité
-DEFAULT_TOL = 0.3            # finesse de maillage web (mm)
+MODEL_TTL_S = 6 * 3600       # models are purged after 6 h of inactivity
+DEFAULT_TOL = 0.3            # web mesh tolerance (mm)
 
 
 @dataclass
@@ -62,7 +62,7 @@ class Store:
         mid = uuid.uuid4().hex[:12]
         folder = self.root / mid
         folder.mkdir()
-        safe = Path(upload_name).name or "modele.step"
+        safe = Path(upload_name).name or "model.step"
         step = folder / safe
         step.write_bytes(data)
         scene = load_step(step, tol_linear=tol)
@@ -77,7 +77,7 @@ class Store:
     def get(self, mid: str) -> StoredModel:
         m = self.models.get(mid)
         if m is None:
-            raise HTTPException(404, "Modèle inconnu ou expiré : rechargez le fichier.")
+            raise HTTPException(404, "Model not found or expired: re-upload the file.")
         m.touched = time.time()
         return m
 
@@ -96,7 +96,7 @@ PASSWORD = os.environ.get("STEPVIEWER_PASSWORD", "")
 
 
 class BasicAuth(BaseHTTPMiddleware):
-    """Protection par mot de passe (HTTP Basic) si STEPVIEWER_PASSWORD est défini."""
+    """Password protection (HTTP Basic) when STEPVIEWER_PASSWORD is set."""
 
     async def dispatch(self, request, call_next):
         if not PASSWORD or request.url.path == "/api/health":
@@ -110,7 +110,7 @@ class BasicAuth(BaseHTTPMiddleware):
             except Exception:  # noqa: BLE001
                 ok = False
         if not ok:
-            return Response("Mot de passe requis.", status_code=401,
+            return Response("Password required.", status_code=401,
                             headers={"WWW-Authenticate": 'Basic realm="STEP Viewer"'})
         return await call_next(request)
 
@@ -123,7 +123,7 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 # ----------------------------------------------------------------------------
 class FitRequest(BaseModel):
     unit: tuple[float, float, float]
-    carton: tuple[float, float, float] = Field(..., description="dimensions intérieures L, l, h en mm")
+    carton: tuple[float, float, float] = Field(..., description="inner dimensions L, W, H in mm")
     clearance: float = 0.0
     allow_rotation: bool = True
     pallet: str | None = "euro"
@@ -149,21 +149,21 @@ def materials() -> dict:
 
 @app.post("/api/models")
 async def upload(file: UploadFile = File(...), tol: float = Query(DEFAULT_TOL, ge=0.02, le=5.0)) -> JSONResponse:
-    name = file.filename or "modele.step"
+    name = file.filename or "model.step"
     if Path(name).suffix.lower() not in {".step", ".stp"}:
-        raise HTTPException(415, f"« {name} » n'est pas un fichier STEP (.step / .stp).")
+        raise HTTPException(415, f"'{name}' is not a STEP file (.step / .stp).")
     data = await file.read()
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(413, f"Fichier trop volumineux (max {MAX_UPLOAD_MB} Mo).")
+        raise HTTPException(413, f"File too large (max {MAX_UPLOAD_MB} MB).")
     if not data:
-        raise HTTPException(400, "Fichier vide.")
+        raise HTTPException(400, "Empty file.")
     try:
         m = store.add(name, data, tol)
     except StepLoadError as exc:
         raise HTTPException(422, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        log.exception("Échec de lecture de %s", name)
-        raise HTTPException(500, f"Erreur interne pendant la lecture : {exc}") from exc
+        log.exception("Failed to read %s", name)
+        raise HTTPException(500, f"Internal error while reading: {exc}") from exc
     return JSONResponse(_payload(m))
 
 
@@ -197,7 +197,7 @@ def model_export(mid: str, ext: str) -> FileResponse:
     m = store.get(mid)
     ext = ext.lower()
     if ext not in SUPPORTED:
-        raise HTTPException(400, f"Format .{ext} non géré ({', '.join(SUPPORTED)}).")
+        raise HTTPException(400, f"Format .{ext} not supported ({', '.join(SUPPORTED)}).")
     if ext not in m.exports:
         m.exports[ext] = export_scene(m.scene, m.folder / f"export.{ext}")
     return FileResponse(m.exports[ext], filename=f"{Path(m.name).stem}.{ext}")
@@ -210,8 +210,8 @@ def model_report(mid: str, material: str | None = None, density: float | None = 
         info = analyse(m.scene, material=material, density=density) if (material or density) else m.info
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    out = html_report(info, m.scene, m.folder / "rapport.html")
-    return FileResponse(out, media_type="text/html", filename=f"{Path(m.name).stem}_rapport.html")
+    out = html_report(info, m.scene, m.folder / "report.html")
+    return FileResponse(out, media_type="text/html", filename=f"{Path(m.name).stem}_report.html")
 
 
 @app.get("/api/models/{mid}/analysis.json")
@@ -221,8 +221,8 @@ def model_json(mid: str, material: str | None = None, density: float | None = No
         info = analyse(m.scene, material=material, density=density) if (material or density) else m.info
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    out = json_report(info, m.folder / "analyse.json")
-    return FileResponse(out, media_type="application/json", filename=f"{Path(m.name).stem}_analyse.json")
+    out = json_report(info, m.folder / "analysis.json")
+    return FileResponse(out, media_type="application/json", filename=f"{Path(m.name).stem}_analysis.json")
 
 
 @app.delete("/api/models/{mid}")
@@ -242,9 +242,9 @@ def fit(req: FitRequest) -> dict:
         if req.pallet:
             pal = fit_on_pallet(req.carton, req.pallet, max_height=req.max_height)
             out["pallet"] = pal.to_dict()
-            out["units_per_pallet"] = pal.quantite * carton.quantite
+            out["units_per_pallet"] = pal.quantity * carton.quantity
         if req.mass_g:
-            out["mass_per_carton_kg"] = round(carton.quantite * req.mass_g / 1000, 2)
+            out["mass_per_carton_kg"] = round(carton.quantity * req.mass_g / 1000, 2)
             if req.pallet:
                 out["mass_per_pallet_kg"] = round(out["units_per_pallet"] * req.mass_g / 1000, 1)
         return out
@@ -256,6 +256,6 @@ def run(host: str = "127.0.0.1", port: int = 8000, reload: bool = False, passwor
     import uvicorn
     if password:
         os.environ["STEPVIEWER_PASSWORD"] = password
-    protected = "  (protégé par mot de passe)" if os.environ.get("STEPVIEWER_PASSWORD") else ""
+    protected = "  (password protected)" if os.environ.get("STEPVIEWER_PASSWORD") else ""
     print(f"\n  STEP Viewer  ->  http://{'localhost' if host == '127.0.0.1' else host}:{port}{protected}\n")
     uvicorn.run("stepviewer.server:app", host=host, port=port, reload=reload, log_level="info")

@@ -1,4 +1,4 @@
-"""Analyse géométrique orientée packaging : dimensions, volumes, masse estimée."""
+"""Geometry analysis for packaging: dimensions, volumes, estimated mass."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
@@ -9,7 +9,7 @@ import trimesh
 
 from .loader import combined_mesh, oriented_extents
 
-# Densités usuelles des matériaux d'emballage (g/cm³)
+# Common densities for packaging materials (g/cm³)
 MATERIALS: dict[str, float] = {
     "pet": 1.38,
     "rpet": 1.38,
@@ -19,49 +19,49 @@ MATERIALS: dict[str, float] = {
     "ps": 1.05,
     "pla": 1.24,
     "pvc": 1.40,
-    "verre": 2.50,
+    "glass": 2.50,
     "aluminium": 2.70,
-    "acier": 7.85,
-    "fer_blanc": 7.85,
-    "carton": 0.70,       # carton compact
-    "carton_ondule": 0.15,
-    "papier": 0.80,
-    "bois": 0.60,
-    "liege": 0.24,
-    "mousse_pe": 0.03,
-    "mousse_pu": 0.04,
+    "steel": 7.85,
+    "tin_plate": 7.85,
+    "cardboard": 0.70,       # compact cardboard
+    "corrugated_cardboard": 0.15,
+    "paper": 0.80,
+    "wood": 0.60,
+    "cork": 0.24,
+    "pe_foam": 0.03,
+    "pu_foam": 0.04,
 }
 
 
 @dataclass
 class PartInfo:
-    nom: str
+    name: str
     triangles: int
     dimensions_mm: tuple[float, float, float]
-    centre_mm: tuple[float, float, float]
+    center_mm: tuple[float, float, float]
     volume_cm3: float | None
     surface_cm2: float
-    etanche: bool
-    masse_g: float | None = None
-    epaisseur_mm_estimee: float | None = None
+    watertight: bool
+    mass_g: float | None = None
+    wall_thickness_mm: float | None = None
 
 
 @dataclass
 class ModelInfo:
-    fichier: str
-    pieces: int
+    filename: str
+    parts: int
     triangles: int
     dimensions_mm: tuple[float, float, float]
-    dimensions_orientees_mm: tuple[float, float, float]
-    centre_mm: tuple[float, float, float]
-    volume_englobant_cm3: float
-    volume_matiere_cm3: float
+    oriented_dimensions_mm: tuple[float, float, float]
+    center_mm: tuple[float, float, float]
+    bounding_volume_cm3: float
+    material_volume_cm3: float
     surface_cm2: float
-    taux_remplissage_pct: float
-    materiau: str | None = None
-    densite_g_cm3: float | None = None
-    masse_g: float | None = None
-    avertissements: list[str] = field(default_factory=list)
+    fill_rate_pct: float
+    material: str | None = None
+    density_g_cm3: float | None = None
+    mass_g: float | None = None
+    warnings: list[str] = field(default_factory=list)
     details: list[PartInfo] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -77,11 +77,11 @@ def _tuple(v) -> tuple[float, float, float]:
 
 
 def estimate_wall_thickness(mesh: trimesh.Trimesh) -> float | None:
-    """Estimation grossière de l'épaisseur de paroi : 2 x volume / surface.
+    """Rough estimate of wall thickness: 2 × volume / surface area.
 
-    Exacte pour une plaque, raisonnable pour une bouteille ou un pot à paroi
-    mince ; sans signification pour une pièce massive (renvoie alors None si
-    l'épaisseur dépasse 20 % de la plus petite dimension).
+    Exact for a flat plate, reasonable for a thin-walled bottle or jar;
+    meaningless for a solid part (returns None when the thickness exceeds
+    20 % of the smallest dimension).
     """
     if not mesh.is_watertight or mesh.area <= 0:
         return None
@@ -91,13 +91,13 @@ def estimate_wall_thickness(mesh: trimesh.Trimesh) -> float | None:
     return _r(t)
 
 
-def analyse(scene: trimesh.Scene, material: str | None = None,
+def analyze(scene: trimesh.Scene, material: str | None = None,
             density: float | None = None) -> ModelInfo:
-    """Calcule toutes les informations utiles pour une revue packaging."""
+    """Computes all useful information for a packaging review."""
     if material and density is None:
         key = material.lower().replace("-", "_").replace(" ", "_")
         if key not in MATERIALS:
-            raise ValueError(f"Matériau inconnu : {material}. Choix : {', '.join(sorted(MATERIALS))}")
+            raise ValueError(f"Unknown material: {material}. Choices: {', '.join(sorted(MATERIALS))}")
         density = MATERIALS[key]
 
     warnings: list[str] = []
@@ -113,17 +113,17 @@ def analyse(scene: trimesh.Scene, material: str | None = None,
         if vol is not None:
             vol_total += vol
         else:
-            warnings.append(f"Pièce « {name} » : maillage non fermé, volume/masse non calculables.")
+            warnings.append(f'Part "{name}": open mesh, volume/mass cannot be computed.')
         parts.append(PartInfo(
-            nom=name,
+            name=name,
             triangles=len(geom.faces),
             dimensions_mm=_tuple(geom.extents),
-            centre_mm=_tuple(geom.bounds.mean(axis=0)),
+            center_mm=_tuple(geom.bounds.mean(axis=0)),
             volume_cm3=_r(vol / 1000.0) if vol is not None else None,
             surface_cm2=_r(area / 100.0),
-            etanche=watertight,
-            masse_g=_r(vol / 1000.0 * density, 1) if (vol is not None and density) else None,
-            epaisseur_mm_estimee=estimate_wall_thickness(geom),
+            watertight=watertight,
+            mass_g=_r(vol / 1000.0 * density, 1) if (vol is not None and density) else None,
+            wall_thickness_mm=estimate_wall_thickness(geom),
         ))
 
     extents = np.asarray(scene.extents, dtype=float)
@@ -134,36 +134,41 @@ def analyse(scene: trimesh.Scene, material: str | None = None,
     bbox_vol = float(np.prod(extents))
 
     if extents.max() > 3000:
-        warnings.append("Dimensions > 3 m : vérifier l'unité du STEP (pouces ? mètres ?).")
+        warnings.append("Dimensions > 3 m: check STEP units (inches? metres?).")
     if extents.max() < 1:
-        warnings.append("Dimensions < 1 mm : vérifier l'unité du STEP.")
+        warnings.append("Dimensions < 1 mm: check STEP units.")
     if np.prod(np.sort(obb_ext)) < 0.9 * bbox_vol:
-        warnings.append("La pièce est inclinée dans son repère : voir « dimensions orientées ».")
+        warnings.append('The part is tilted in its frame: see "oriented dimensions".')
 
     return ModelInfo(
-        fichier=Path(scene.metadata.get("source", "")).name,
-        pieces=len(parts),
+        filename=Path(scene.metadata.get("source", "")).name,
+        parts=len(parts),
         triangles=sum(p.triangles for p in parts),
         dimensions_mm=_tuple(extents),
-        dimensions_orientees_mm=_tuple(np.sort(obb_ext)[::-1]),
-        centre_mm=_tuple(scene.bounds.mean(axis=0)),
-        volume_englobant_cm3=_r(bbox_vol / 1000.0),
-        volume_matiere_cm3=_r(vol_total / 1000.0),
+        oriented_dimensions_mm=_tuple(np.sort(obb_ext)[::-1]),
+        center_mm=_tuple(scene.bounds.mean(axis=0)),
+        bounding_volume_cm3=_r(bbox_vol / 1000.0),
+        material_volume_cm3=_r(vol_total / 1000.0),
         surface_cm2=_r(area_total / 100.0),
-        taux_remplissage_pct=_r(100.0 * vol_total / bbox_vol if bbox_vol else 0.0, 1),
-        materiau=material,
-        densite_g_cm3=density,
-        masse_g=_r(vol_total / 1000.0 * density, 1) if density else None,
-        avertissements=warnings,
+        fill_rate_pct=_r(100.0 * vol_total / bbox_vol if bbox_vol else 0.0, 1),
+        material=material,
+        density_g_cm3=density,
+        mass_g=_r(vol_total / 1000.0 * density, 1) if density else None,
+        warnings=warnings,
         details=parts,
     )
 
 
-def interference_check(scene: trimesh.Scene, max_pairs: int = 50) -> list[tuple[str, str]]:
-    """Détecte les paires de pièces dont les boîtes englobantes se chevauchent.
+# Backward-compatibility alias
+analyse = analyze
 
-    Première alerte rapide pour repérer des collisions entre produit, calage et
-    étui dans un assemblage. Ne remplace pas une vraie détection d'interférence.
+
+def interference_check(scene: trimesh.Scene, max_pairs: int = 50) -> list[tuple[str, str]]:
+    """Detects pairs of parts whose bounding boxes overlap.
+
+    A quick first alert for spotting collisions between product, padding and
+    sleeve in an assembly. Does not replace a proper interference-detection
+    analysis.
     """
     names = list(scene.geometry)
     hits = []

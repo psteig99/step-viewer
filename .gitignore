@@ -12,3 +12,4 @@ samples/*.html
 samples/*.csv
 *.png
 !docs/*.png
+.DS_Store

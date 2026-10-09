@@ -1,4 +1,4 @@
-"""Tests de l'API web."""
+"""Tests for the web API."""
 from pathlib import Path
 
 import pytest
@@ -14,7 +14,7 @@ client = TestClient(app)
 
 def test_index_and_static():
     assert client.get("/").status_code == 200
-    assert "Déposez" in client.get("/").text
+    assert "Drop" in client.get("/").text
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/static/vendor/three/three.module.js").status_code == 200
 
@@ -36,7 +36,7 @@ def test_upload_flow():
     assert client.get(f"/api/models/{mid}/export.stl").status_code == 200
     assert client.get(f"/api/models/{mid}/export.xyz").status_code == 400
     rep = client.get(f"/api/models/{mid}/report.html?material=pet")
-    assert rep.status_code == 200 and b"Masse" in rep.content
+    assert rep.status_code == 200 and b"Mass" in rep.content
     assert client.get(f"/api/models/{mid}/analysis.json?material=kryptonite").status_code == 400
     assert client.delete(f"/api/models/{mid}").status_code == 200
     assert client.get(f"/api/models/{mid}").status_code == 404
@@ -51,7 +51,7 @@ def test_fit():
     r = client.post("/api/fit", json={"unit": [100, 50, 30], "carton": [400, 300, 250], "clearance": 0, "mass_g": 100})
     assert r.status_code == 200
     d = r.json()
-    assert d["carton"]["quantite"] >= 192 and d["units_per_pallet"] > 0 and d["mass_per_carton_kg"] > 0
+    assert d["carton"]["quantity"] >= 192 and d["units_per_pallet"] > 0 and d["mass_per_carton_kg"] > 0
     assert client.post("/api/fit", json={"unit": [100, 50, 30], "carton": [400, 300, 250], "pallet": "mars"}).status_code == 400
 
 

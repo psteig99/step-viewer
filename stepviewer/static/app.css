@@ -1,13 +1,13 @@
-/* STEP Viewer – établi technique : gris atelier, bleu cyanotype, ocre kraft. */
+/* STEP Viewer – workshop bench: workshop grey, blueprint blue, kraft ochre. */
 :root {
-  --bench: #e9ecef;        /* fond du viewport */
-  --paper: #f7f8fa;        /* panneau latéral */
-  --ink: #1b2430;          /* texte */
-  --ink-2: #5a6472;        /* texte secondaire */
-  --rule: #cfd5dc;         /* traits de séparation */
-  --cyan: #1f4e9a;         /* bleu cyanotype : cotes, actions */
+  --bench: #e9ecef;        /* viewport background */
+  --paper: #f7f8fa;        /* side panel */
+  --ink: #1b2430;          /* text */
+  --ink-2: #5a6472;        /* secondary text */
+  --rule: #cfd5dc;         /* dividers */
+  --cyan: #1f4e9a;         /* blueprint blue: dims, actions */
   --cyan-soft: #dbe5f5;
-  --kraft: #c08a3e;        /* ocre kraft : état actif */
+  --kraft: #c08a3e;        /* kraft ochre: active state */
   --kraft-soft: #f3e6cf;
   --alert: #b42318;
   --alert-soft: #fdecea;
@@ -29,7 +29,7 @@ button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--kraft); outline-offset: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-/* ---- barre du haut --------------------------------------------------- */
+/* ---- top bar ------------------------------------------------------------- */
 .topbar { height: var(--topbar); display: flex; align-items: center; gap: 16px; padding: 0 16px;
   background: var(--paper); border-bottom: 1px solid var(--rule); }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; }
@@ -44,7 +44,7 @@ button { cursor: pointer; }
 .btn:hover { filter: brightness(1.08); }
 .link { border: 0; background: none; padding: 0; color: var(--cyan); text-decoration: underline; }
 
-/* ---- disposition ------------------------------------------------------ */
+/* ---- layout -------------------------------------------------------------- */
 .layout { display: grid; grid-template-columns: 1fr var(--panel-w); height: calc(100% - var(--topbar)); }
 .layout.no-panel { grid-template-columns: 1fr; }
 .stage { position: relative; overflow: hidden; }
@@ -52,7 +52,7 @@ button { cursor: pointer; }
 .viewport canvas { display: block; outline: none; }
 .viewport.measuring { cursor: crosshair; }
 
-/* ---- zone de dépôt ---------------------------------------------------- */
+/* ---- drop zone ----------------------------------------------------------- */
 .drop { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px;
   background: var(--bench); transition: background .15s; }
 .drop-inner { max-width: 480px; text-align: center; padding: 44px 36px; border: 1.5px dashed var(--cyan);
@@ -67,7 +67,7 @@ body.dragging .drop-inner { border-style: solid; border-color: var(--kraft); }
 body.dragging .drop.minimised { inset: 0; height: auto; padding: 24px; pointer-events: auto;
   background: color-mix(in srgb, var(--cyan-soft) 80%, transparent); }
 
-/* ---- chargement --------------------------------------------------------- */
+/* ---- loading ------------------------------------------------------------- */
 .loading { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px;
   background: color-mix(in srgb, var(--bench) 70%, transparent); backdrop-filter: blur(2px); z-index: 5; }
 .loading[hidden] { display: none; }
@@ -76,7 +76,7 @@ body.dragging .drop.minimised { inset: 0; height: auto; padding: 24px; pointer-e
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
 
-/* ---- barre d'outils ----------------------------------------------------- */
+/* ---- toolbar ------------------------------------------------------------- */
 .toolbar { position: absolute; left: 12px; top: 12px; display: flex; flex-wrap: wrap; gap: 8px; z-index: 3; }
 .toolbar[hidden] { display: none; }
 .tool-group { display: flex; background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius);
@@ -108,12 +108,12 @@ body.dragging .drop.minimised { inset: 0; height: auto; padding: 24px; pointer-e
 .clip-panel:not([hidden]) ~ .hint { bottom: 64px; }
 .measure-hud:not([hidden]) ~ .hint { bottom: 64px; }
 
-/* étiquettes 3D (CSS2D) */
+/* 3D labels (CSS2D) */
 .lbl { font: 12px/1 var(--font); padding: 2px 6px; border-radius: 3px; white-space: nowrap; pointer-events: none; }
 .lbl.dim { color: var(--cyan); background: color-mix(in srgb, var(--bench) 85%, transparent); font-weight: 600; }
 .lbl.measure { color: #fff; background: var(--alert); font-weight: 600; }
 
-/* ---- panneau latéral ----------------------------------------------------- */
+/* ---- side panel ---------------------------------------------------------- */
 .panel { background: var(--paper); border-left: 1px solid var(--rule); overflow-y: auto; scrollbar-width: thin; }
 .panel[hidden] { display: none; }
 .panel-head { padding: 16px 18px 12px; border-bottom: 1px solid var(--rule); }
@@ -157,7 +157,7 @@ body.dragging .drop.minimised { inset: 0; height: auto; padding: 24px; pointer-e
 .part .sw { width: 10px; height: 10px; border-radius: 2px; }
 .part .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .part .dm { color: var(--ink-2); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.part.open-mesh .nm::after { content: " (non fermé)"; color: var(--alert); font-size: 11px; }
+.part.open-mesh .nm::after { content: " (open mesh)"; color: var(--alert); font-size: 11px; }
 
 .fit-result { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .fit-cell { padding: 8px 10px; border: 1px solid var(--rule); border-radius: var(--radius); }

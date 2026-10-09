@@ -1,15 +1,15 @@
-"""Visionneuse 3D de bureau (pyvista / VTK).
+"""Desktop 3D viewer (pyvista / VTK).
 
-Raccourcis :
-    W / S   filaire / surfaces          T   transparence (voir l'intérieur)
-    B       boîte englobante            O   boîte englobante orientée (minimale)
-    X Y Z   vue dessus / face / côté    I   vue isométrique      R  recadrer
-    E / D   éclaté + / -                A   réinitialiser l'éclaté
-    M       mode mesure (clic droit sur 2 points)      C  effacer les mesures
-    P       plan de coupe               N   axe du plan de coupe (X -> Y -> Z)
-    1..9    isoler la pièce n° / 0 tout afficher
-    F       capture d'écran PNG         H   aide      Q  quitter
-Souris : clic gauche rotation · molette zoom · clic milieu / Maj+gauche translation
+Shortcuts:
+    W / S   wireframe / surfaces        T   transparency (see inside)
+    B       bounding box                O   oriented bounding box (minimal)
+    X Y Z   top view / front / side     I   isometric view       R  fit
+    E / D   explode + / -               A   reset explode
+    M       measure mode (right-click on 2 points)     C  clear measurements
+    P       clip plane                  N   clip plane axis (X -> Y -> Z)
+    1..9    isolate part n° / 0 show all
+    F       PNG screenshot              H   help      Q  quit
+Mouse: left click rotation · scroll wheel zoom · middle click / Shift+left pan
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 PALETTE = ["#3b6fb6", "#d1495b", "#6aa84f", "#8e63b5", "#ec8f2a", "#30a5b8",
            "#7f7f7f", "#c9a227", "#1f8a70", "#b85c38"]
 
-HELP = __doc__.split("Raccourcis :", 1)[1].strip()
+HELP = __doc__.split("Shortcuts:", 1)[1].strip()
 
 
 def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
@@ -36,10 +36,10 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
     try:
         import pyvista as pv
     except ImportError as exc:  # pragma: no cover
-        raise SystemExit("pyvista n'est pas installé : pip install pyvista") from exc
+        raise SystemExit("pyvista is not installed: pip install pyvista") from exc
 
     pv.global_theme.allow_empty_mesh = True
-    pl = pv.Plotter(title=f"{title} – {info.fichier}", window_size=(1400, 880), off_screen=off_screen)
+    pl = pv.Plotter(title=f"{title} – {info.filename}", window_size=(1400, 880), off_screen=off_screen)
     pl.set_background("#ffffff", top="#dde5ee")
     pl.enable_anti_aliasing("fxaa")
 
@@ -48,7 +48,7 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
     names = list(scene.geometry)
     centre = np.asarray(scene.bounds.mean(axis=0))
 
-    # ---- pièces -----------------------------------------------------------
+    # ---- parts -----------------------------------------------------------
     actors, meshes, centres = [], [], []
     for i, name in enumerate(names):
         geom = scene.geometry[name]
@@ -60,7 +60,7 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
         meshes.append(mesh)
         centres.append(np.asarray(geom.bounds.mean(axis=0)))
 
-    # ---- boîtes englobantes ------------------------------------------------
+    # ---- bounding boxes ------------------------------------------------
     bbox_actor = pl.add_mesh(pv.Box(bounds=scene.bounds.T.ravel()), style="wireframe",
                              color="#222222", line_width=1.5, opacity=0.6)
     obb_actor = None
@@ -71,14 +71,14 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
         obb_actor = pl.add_mesh(obb, style="wireframe", color="#d1495b", line_width=1.5)
         obb_actor.SetVisibility(False)
     except Exception as exc:  # noqa: BLE001
-        log.debug("OBB indisponible : %s", exc)
+        log.debug("OBB unavailable: %s", exc)
 
-    # ---- textes -------------------------------------------------------------
-    mass = f"   Masse : {info.masse_g} g ({info.materiau})" if info.masse_g is not None else ""
-    pl.add_text(f"{info.fichier}\nHors-tout : {L:g} × {l:g} × {h:g} mm\n"
-                f"Pièces : {info.pieces}   Vol. matière : {info.volume_matiere_cm3} cm³{mass}",
+    # ---- text labels -----------------------------------------------------------
+    mass = f"   Mass: {info.mass_g} g ({info.material})" if info.mass_g is not None else ""
+    pl.add_text(f"{info.filename}\nOverall dims: {L:g} × {l:g} × {h:g} mm\n"
+                f"Parts: {info.parts}   Material vol.: {info.material_volume_cm3} cm³{mass}",
                 position="upper_left", font_size=11, color="#111111")
-    status = pl.add_text("H : aide", position="lower_left", font_size=9, color="#444444")
+    status = pl.add_text("H: help", position="lower_left", font_size=9, color="#444444")
     measure_text = pl.add_text("", position="upper_right", font_size=11, color="#b00000")
     help_actor = pl.add_text(HELP, position="lower_right", font_size=9, color="#111111")
     help_actor.SetVisibility(False)
@@ -96,17 +96,17 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
         status.SetText(0, msg)
         pl.render()
 
-    # ---- représentation -----------------------------------------------------
+    # ---- representation ----------------------------------------------------
     def set_repr(mode: str) -> None:
         for a in actors:
             getattr(a.GetProperty(), f"SetRepresentationTo{mode}")()
-        set_status(f"Affichage : {mode.lower()}")
+        set_status(f"Display: {mode.lower()}")
 
     def toggle_alpha() -> None:
         state["alpha"] = {1.0: 0.35, 0.35: 1.0}[state["alpha"]]
         for a in actors:
             a.GetProperty().SetOpacity(state["alpha"])
-        set_status("Transparence " + ("activée" if state["alpha"] < 1 else "désactivée"))
+        set_status("Transparency " + ("on" if state["alpha"] < 1 else "off"))
 
     def toggle_bbox() -> None:
         state["bbox"] = not state["bbox"]
@@ -118,16 +118,16 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
             return
         state["obb"] = not state["obb"]
         obb_actor.SetVisibility(state["obb"])
-        Lo, lo, ho = info.dimensions_orientees_mm
-        set_status(f"Encombrement orienté : {Lo:g} × {lo:g} × {ho:g} mm" if state["obb"] else "")
+        Lo, lo, ho = info.oriented_dimensions_mm
+        set_status(f"Oriented dims: {Lo:g} × {lo:g} × {ho:g} mm" if state["obb"] else "")
 
-    # ---- éclaté -------------------------------------------------------------
+    # ---- explode -----------------------------------------------------------
     def explode(delta: float) -> None:
         state["explode"] = max(0.0, state["explode"] + delta)
         for a, c in zip(actors, centres):
             offset = (c - centre) * state["explode"]
             a.SetPosition(*offset)
-        set_status(f"Éclaté : {state['explode']:.1f}" if state["explode"] else "")
+        set_status(f"Explode: {state['explode']:.1f}" if state["explode"] else "")
 
     def reset_explode() -> None:
         state["explode"] = 0.0
@@ -135,19 +135,19 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
             a.SetPosition(0, 0, 0)
         set_status("")
 
-    # ---- isolation d'une pièce ---------------------------------------------
+    # ---- part isolation -------------------------------------------
     def isolate(idx: int | None) -> None:
         for i, a in enumerate(actors):
             a.SetVisibility(idx is None or i == idx)
         if idx is None:
-            set_status("Toutes les pièces affichées")
+            set_status("All parts shown")
         else:
             p = info.details[idx]
             d = " × ".join(f"{x:g}" for x in p.dimensions_mm)
-            set_status(f"Pièce {idx + 1} : {p.nom}   {d} mm   "
+            set_status(f"Part {idx + 1}: {p.name}   {d} mm   "
                        f"{'%s cm³' % p.volume_cm3 if p.volume_cm3 is not None else ''}")
 
-    # ---- mesure -------------------------------------------------------------
+    # ---- measure -----------------------------------------------------------
     def on_pick(point) -> None:
         if not state["measure"]:
             return
@@ -162,7 +162,7 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
             state["marks"].append(pl.add_point_labels(
                 [(p1 + p2) / 2], [f"{dist:.2f} mm"], font_size=14, text_color="#b00000",
                 shape_color="white", always_visible=True))
-            measure_text.SetText(3, f"Distance : {dist:.2f} mm\ndX {dx:.2f}  dY {dy:.2f}  dZ {dz:.2f} mm")
+            measure_text.SetText(3, f"Distance: {dist:.2f} mm\ndX {dx:.2f}  dY {dy:.2f}  dZ {dz:.2f} mm")
             state["pts"] = []
         pl.render()
 
@@ -171,7 +171,7 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
 
     def toggle_measure() -> None:
         state["measure"] = not state["measure"]
-        measure_text.SetText(3, "MODE MESURE : clic droit sur 2 points" if state["measure"] else "")
+        measure_text.SetText(3, "MEASURE MODE: right-click on 2 points" if state["measure"] else "")
         pl.render()
 
     def clear_measure() -> None:
@@ -179,10 +179,10 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
             pl.remove_actor(m)
         state["marks"].clear()
         state["pts"].clear()
-        measure_text.SetText(3, "MODE MESURE : clic droit sur 2 points" if state["measure"] else "")
+        measure_text.SetText(3, "MEASURE MODE: right-click on 2 points" if state["measure"] else "")
         pl.render()
 
-    # ---- coupe ---------------------------------------------------------------
+    # ---- clip plane -------------------------------------------------------
     combined = pv.MultiBlock(meshes).combine()
 
     def _enable_clip() -> None:
@@ -191,7 +191,7 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
             a.SetVisibility(False)
         state["clip_actor"] = pl.add_mesh_clip_plane(combined, normal=axis, color="#3b6fb6",
                                                      smooth_shading=True, invert=False)
-        set_status(f"Plan de coupe {axis.upper()} – glisser la flèche, N : changer d'axe")
+        set_status(f"Clip plane {axis.upper()} – drag the arrow, N: change axis")
 
     def _disable_clip() -> None:
         pl.clear_plane_widgets()
@@ -213,20 +213,20 @@ def show(scene: trimesh.Scene, info: ModelInfo, title: str = "STEP Viewer",
             state["clip"] = True
             _enable_clip()
 
-    # ---- capture -------------------------------------------------------------
+    # ---- screenshot -------------------------------------------------------
     def screenshot() -> None:
         folder = Path(screenshot_dir) if screenshot_dir else Path.cwd()
         folder.mkdir(parents=True, exist_ok=True)
-        out = folder / f"{Path(info.fichier).stem}_{datetime.now():%Y%m%d_%H%M%S}.png"
+        out = folder / f"{Path(info.filename).stem}_{datetime.now():%Y%m%d_%H%M%S}.png"
         pl.screenshot(str(out), transparent_background=False, scale=2)
-        set_status(f"Capture enregistrée : {out}")
+        set_status(f"Screenshot saved: {out}")
 
     def toggle_help() -> None:
         state["help"] = not state["help"]
         help_actor.SetVisibility(state["help"])
         pl.render()
 
-    # ---- touches ---------------------------------------------------------------
+    # ---- key bindings ----------------------------------------------------
     keys = {
         "w": lambda: set_repr("Wireframe"), "s": lambda: set_repr("Surface"), "t": toggle_alpha,
         "b": toggle_bbox, "o": toggle_obb,

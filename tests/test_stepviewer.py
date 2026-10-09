@@ -1,4 +1,4 @@
-"""Tests : lecture, analyse, colisage, rapports, export, CLI."""
+"""Tests: loading, analysis, packing, reports, export, CLI."""
 from pathlib import Path
 
 import pytest
@@ -28,11 +28,11 @@ def test_load_dimensions_mm(scene):
 
 
 def test_analysis(info):
-    assert info.pieces == 1
-    assert info.details[0].etanche
-    assert 150 < info.volume_matiere_cm3 < 250
-    assert info.masse_g == pytest.approx(info.volume_matiere_cm3 * 1.38, rel=1e-2)
-    assert 0 < info.taux_remplissage_pct <= 100
+    assert info.parts == 1
+    assert info.details[0].watertight
+    assert 150 < info.material_volume_cm3 < 250
+    assert info.mass_g == pytest.approx(info.material_volume_cm3 * 1.38, rel=1e-2)
+    assert 0 < info.fill_rate_pct <= 100
 
 
 def test_unknown_material(scene):
@@ -42,20 +42,20 @@ def test_unknown_material(scene):
 
 def test_missing_file():
     with pytest.raises(StepLoadError):
-        load_step("nexistepas.step")
+        load_step("doesnotexist.step")
 
 
 def test_fit():
     r = fit_in_container((100, 50, 30), (400, 300, 250), clearance=0)
-    assert r.quantite == 4 * 6 * 8 or r.quantite >= 192
+    assert r.quantity == 4 * 6 * 8 or r.quantity >= 192
     r2 = fit_in_container((100, 50, 30), (400, 300, 250), clearance=2, allow_rotation=False)
-    assert r2.par_axe == (3, 5, 7)
+    assert r2.per_axis == (3, 5, 7)
     p = fit_on_pallet((400, 300, 250), "euro", max_height=1800)
-    assert p.quantite == 3 * 2 * 6 or p.quantite >= 36
+    assert p.quantity == 3 * 2 * 6 or p.quantity >= 36
 
 
 def test_reports(scene, info, tmp_path):
-    assert "Hors-tout" in text_report(info)
+    assert "Overall dims" in text_report(info)
     j = json_report(info, tmp_path / "r.json")
     assert '"dimensions_mm"' in j.read_text(encoding="utf-8")
     c = csv_report([info], tmp_path / "r.csv")
@@ -75,7 +75,7 @@ def test_export(scene, tmp_path):
 def test_cli_info(capsys):
     from stepviewer.cli import main
     main(["info", str(SAMPLE), "-m", "hdpe"])
-    assert "Masse estimée" in capsys.readouterr().out
+    assert "Est. mass" in capsys.readouterr().out
 
 
 def test_viewer_offscreen(scene, info):
