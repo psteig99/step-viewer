@@ -40,6 +40,8 @@ button { cursor: pointer; }
 .model-tab.active { border-color: var(--kraft); background: var(--kraft-soft); }
 .model-tab .x { border: 0; background: none; padding: 0 2px; color: var(--ink-2); line-height: 1; }
 .model-tab .x:hover { color: var(--alert); }
+#quality { padding: 5px 8px; border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--bench); color: var(--ink2); font-size: 13px; cursor: pointer; }
 .btn { padding: 7px 14px; border: 1px solid var(--cyan); border-radius: var(--radius); background: var(--cyan); color: #fff; }
 .btn:hover { filter: brightness(1.08); }
 .btn-outline { background: transparent; color: var(--cyan); }

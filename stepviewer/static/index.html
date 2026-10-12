@@ -22,6 +22,11 @@
   </div>
   <nav class="models" id="models" aria-label="Open files"></nav>
   <div class="topbar-right">
+    <select id="quality" title="Mesh quality (affects loading time and detail level)">
+      <option value="0.5">Draft</option>
+      <option value="0.3" selected>Normal</option>
+      <option value="0.1">High</option>
+    </select>
     <button class="btn" id="btn-open" type="button">Open file…</button>
     <input type="file" id="file-input" accept=".step,.stp,.STEP,.STP" multiple hidden>
   </div>

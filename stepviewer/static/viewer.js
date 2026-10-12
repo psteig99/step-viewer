@@ -95,7 +95,8 @@ async function uploadFile(file) {
   el.loadingText.textContent = `Reading ${file.name} (${fmtBytes(file.size)})…`;
   try {
     const fd = new FormData(); fd.append("file", file);
-    const res = await fetch("/api/models", { method: "POST", body: fd });
+    const tol = parseFloat($("#quality")?.value || "0.3");
+    const res = await fetch(`/api/models?tol=${tol}`, { method: "POST", body: fd });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Error ${res.status}`);
     const payload = await res.json();
     el.loadingText.textContent = "Displaying part…";
