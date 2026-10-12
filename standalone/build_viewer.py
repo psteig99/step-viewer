@@ -1,9 +1,34 @@
-import base64, pathlib
+"""
+Build script for step-viewer.html (standalone, no server).
 
-WASM_GZ = pathlib.Path("/tmp/claude-501/occt.wasm.gz").read_bytes()
+Requirements — place these files next to this script before running:
+  occt.wasm.gz   gzip-compressed WASM from occt-import-js@0.0.14
+  occt.js        Emscripten JS glue from the same package
+
+Quick way to get them:
+  npm pack occt-import-js@0.0.14
+  tar xf occt-import-js-0.0.14.tgz
+  cp package/dist/occt-import-js.wasm occt.wasm
+  gzip -k occt.wasm          # produces occt.wasm.gz
+  cp package/dist/occt-import-js.js occt.js
+
+Then run:
+  python3 build_viewer.py    # writes step-viewer.html (~6.4 MB)
+"""
+import base64, pathlib, sys
+
+HERE = pathlib.Path(__file__).parent
+
+def need(name):
+    p = HERE / name
+    if not p.exists():
+        sys.exit(f"Missing: {p}\nSee the docstring at the top of this script.")
+    return p
+
+WASM_GZ = need("occt.wasm.gz").read_bytes()
 WASM_B64 = base64.b64encode(WASM_GZ).decode()
 
-OCCT_JS  = pathlib.Path("/tmp/claude-501/occt.js").read_text()
+OCCT_JS  = need("occt.js").read_text()
 
 HTML = f'''<!doctype html>
 <html lang="en">
@@ -1093,7 +1118,7 @@ function renderMd(md) {{
 </body>
 </html>'''
 
-out = pathlib.Path("/tmp/claude-501/viewer-final.html")
+out = HERE / "step-viewer.html"
 out.write_text(HTML)
 size = out.stat().st_size
-print(f"Fichier généré : {size:,} octets ({size/1024/1024:.1f} MB)")
+print(f"Written: {out}  ({size/1024/1024:.1f} MB)")

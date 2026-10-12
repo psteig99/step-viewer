@@ -1,31 +1,42 @@
 # Standalone version (single HTML file)
 
-`step-viewer.html` is the same application as the web interface, but **without a server**: STEP reading is handled
-by OpenCASCADE compiled to WebAssembly (`occt-import-js`), and the analysis and packaging calculations are
-rewritten in JavaScript (`src/engine.js`). The file opens with a double-click, can be emailed, dropped on an
-intranet or SharePoint, and no data leaves the browser.
+`step-viewer.html` (~6.4 MB) is a fully self-contained STEP viewer — no server, no install.
+Drop it in a browser tab, on SharePoint, or send it by email. Nothing leaves the browser.
 
-Rebuild after modifying `src/` or `../stepviewer/static/index.html` / `app.css`:
+**Features:**
+- STEP parsing via OpenCASCADE compiled to WebAssembly (`occt-import-js@0.0.14`, embedded)
+- Recursive assembly tree inferred from mesh names (`:` separator), unlimited depth
+- Collapse/expand all · search/filter by name
+- Hover a row → highlight in 3D · click → camera fly-to · double-click group → fit group
+- ✏ inline rename on every mesh (hover to reveal button, or double-click the name)
+- Click a color swatch → native color picker, updates the mesh live
+- Section cut (X/Y/Z), transparency, dimension readout
+- AI analysis via `sample` capability (claude.ai artifact only)
+- PNG screenshot download
+
+## Rebuild `step-viewer.html`
+
+The build script (`build_viewer.py`) embeds the WASM binary directly into the HTML so no network
+fetch is needed at runtime. You need to supply the two WASM files once:
 
 ```bash
 cd standalone
-npm install
-npm run build      # produces step-viewer.html (~5 MB)
+
+# 1. Get the WASM files from occt-import-js@0.0.14
+npm pack occt-import-js@0.0.14
+tar xf occt-import-js-0.0.14.tgz
+cp package/dist/occt-import-js.wasm occt.wasm
+gzip -k occt.wasm          # → occt.wasm.gz (~4.8 MB compressed)
+cp package/dist/occt-import-js.js occt.js
+
+# 2. Build
+python3 build_viewer.py    # → step-viewer.html (~6.4 MB)
 ```
 
-Differences from the server version: no minimum oriented bounding box, HTML report with screenshot instead of
-embedded 3D, no 3MF export. Reading a typical STEP file: 1 to 3 s on a desktop PC.
+`occt.wasm.gz` and `occt.js` are not committed (see `.gitignore`) — they are build-time inputs only.
 
 ## Simple interface "Section + AI analysis"
 
-`simple/coupe-step-ia.html`: three steps only — drop the STEP, section it at a free angle (azimuth,
-elevation, position, side), analyse the section with Claude. AI analysis works when the page is published
-as a claude.ai artifact (the `sample` capability with images: the page sends the section screenshot, the full view
-and the measurements, charged to the account of the person using it). Opened elsewhere, the page offers to save
-the screenshot for manual submission. Rebuild: `npm run build:simple`.
-
-Assembly structure in the simple page: the STEP tree (`result.root` from occt-import-js) is displayed with
-collapsible nodes, show/hide checkboxes by sub-assembly, summed dimensions and volumes, instance badges;
-bidirectional tree ⇄ 3D selection with framing; B-rep face hover (`brep_faces`); automatic groupings
-(colour, name, volume, contact) and renaming; the indented tree and hidden parts of each section are
-passed to the AI.
+`simple/coupe-step-ia.html`: drop a STEP, section it at a free angle (azimuth, elevation, position,
+side), analyse the section with Claude. AI analysis works when the page is published as a claude.ai
+artifact (the `sample` capability with images). Rebuild: `npm install && npm run build:simple`.
