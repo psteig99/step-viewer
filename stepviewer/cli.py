@@ -5,7 +5,6 @@
     stepviewer report piece.step [--material pet] [-o report.html]
     stepviewer export piece.step output.stl|.obj|.glb|.3mf  [--parts]
     stepviewer batch  folder/ [-o summary.csv] [--html] [--material pet]
-    stepviewer fit    piece.step --box 400x300x250 [--clearance 2] [--palette euro]
     stepviewer web [--network] [--port 8000] [--password secret]   (web application)
     stepviewer materials
 """
@@ -19,7 +18,6 @@ from pathlib import Path
 from . import __version__
 from .analysis import MATERIALS, analyse, interference_check
 from .export import SUPPORTED, export_parts, export_scene
-from .fit import PALLETS, fit_in_container, fit_on_pallet
 from .loader import StepLoadError, find_step_files, load_step
 from .report import csv_report, html_report, json_report, text_report
 
@@ -120,29 +118,6 @@ def cmd_batch(args) -> None:
     print(f"\n{len(infos)} file(s) analysed, {len(errors)} error(s). CSV summary -> {out}")
 
 
-def cmd_fit(args) -> None:
-    path, scene, info = _load(args)
-    unit = info.oriented_dimensions_mm if args.oriented else info.dimensions_mm
-    print(text_report(info))
-    if args.box:
-        r = fit_in_container(unit, args.box, clearance=args.clearance, allow_rotation=not args.upright)
-        o = " x ".join(f"{x:g}" for x in r.orientation_mm)
-        print(f"\nPacking in a box {args.box[0]:g} x {args.box[1]:g} x {args.box[2]:g} mm "
-              f"(clearance {args.clearance} mm):")
-        print(f"  {r.quantity} unit(s)   ({r.per_axis[0]} x {r.per_axis[1]} x {r.per_axis[2]}, "
-              f"oriented unit {o} mm)   fill {r.fill_rate_pct} %")
-        if info.mass_g is not None:
-            print(f"  Product mass per box: {r.quantity * info.mass_g / 1000:.2f} kg")
-        if args.palette:
-            p = fit_on_pallet(args.box, args.palette, max_height=args.max_height)
-            print(f"  Pallet {args.palette} (max h {args.max_height:g} mm): {p.quantity} box(es) "
-                  f"({p.per_axis[0]} x {p.per_axis[1]} x {p.per_axis[2]} layers) "
-                  f"-> {p.quantity * r.quantity} units / pallet")
-    elif args.palette:
-        p = fit_on_pallet(unit, args.palette, max_height=args.max_height)
-        print(f"\nPallet {args.palette}: {p.quantity} direct unit(s), fill {p.fill_rate_pct} %")
-
-
 def cmd_web(args) -> None:
     from .server import run
     run(host="0.0.0.0" if args.network else "127.0.0.1", port=args.port, reload=args.dev, password=args.password)
@@ -200,16 +175,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--density", "-d", type=float)
     p.add_argument("--tol", type=float, default=0.5)
     p.set_defaults(func=cmd_batch)
-
-    p = sub.add_parser("fit", help="packing: units per box / boxes per pallet")
-    common(p)
-    p.add_argument("--box", type=_dims, help="inner dimensions LxWxH in mm, e.g. 400x300x250")
-    p.add_argument("--clearance", type=float, default=0.0, help="clearance around each unit (mm)")
-    p.add_argument("--upright", action="store_true", help="forbid rotation of the unit")
-    p.add_argument("--oriented", action="store_true", help="use the minimal oriented footprint")
-    p.add_argument("--palette", choices=sorted(PALLETS), help="pallet format")
-    p.add_argument("--max-height", type=float, default=1800.0, help="max pallet height including pallet (mm)")
-    p.set_defaults(func=cmd_fit)
 
     p = sub.add_parser("web", help="launch the web application")
     p.add_argument("--port", type=int, default=8000)

@@ -25,28 +25,46 @@ All values are millimetres.
 | Watertight | Every edge shared by exactly two triangles (after welding) |
 | Wall thickness | 2·V/S, suppressed for bulky parts |
 | Mass | Volume × density, 19 packaging materials |
-| Packing | Six orientations in a grid, carton then pallet (euro/iso/us/demi_euro) |
 | Overlaps | Pairwise bounding-box intersection |
 
 ## Server (`server.py`)
 
 `POST /api/models` (upload → analysis + GLB) · `GET /api/models/{id}/model.glb` · `export.{stl|obj|glb|3mf|ply}` ·
-`report.html` · `analysis.json` · `DELETE` · `POST /api/fit` · `GET /api/materials` · `/api/docs` (Swagger).
+`report.html` · `analysis.json` · `DELETE` · `GET /api/materials` · `/api/docs` (Swagger).
 Optional HTTP Basic password via `STEPVIEWER_PASSWORD`. three.js is served locally (`static/vendor/three`).
 
-## Viewer (`static/app.js`, `standalone/src/main.js`)
+## Web viewer — JS module architecture
 
-three.js r160, camera up = +Z, CSS2D labels for dimension lines drawn like a drawing. Section plane = one
-`THREE.Plane` on every material; the cut face reads as solid because each mesh has a `BackSide` ochre twin.
-Measure (raycast, two points), explode (radial offset), revision overlay (translucent red clone + delta table).
+The browser UI is split into four ES modules imported by `app.js`:
 
-## Cut + AI page (`standalone/simple/`)
+| Module | Role |
+|---|---|
+| `viewer.js` | Three.js engine, `window.StepViewer` public API, model-load event bus |
+| `capture.js` | Generates 8 thumbnails after each model load (single camera pass) |
+| `analysis.js` | Streams `/api/models/{id}/ai-analysis` (SSE) into the panel |
+| `export.js` | Builds a ZIP of all captures via JSZip (pre-warmed on load) |
 
-Three steps: file → cut at any angle (azimuth φ, elevation θ, `n = (cosθcosφ, cosθsinφ, sinθ)`, position along
-`n`, flip) → AI. Saved cuts store plane, camera and hidden parts, persist in `localStorage`, and can be analysed as
-a series (one capture per cut). The page uses the Claude artifact capability `sample` with images; it degrades to
-"save the capture" outside claude.ai. The STEP product tree is shown with sums, instance badges, hide/select/rename,
-automatic grouping (colour, name, volume, contact) and B-rep face hover; the indented tree is sent to the AI.
+**`window.StepViewer` integration API** — embed `viewer.js` in any page:
+
+```js
+StepViewer.setView("iso")          // 'iso' | 'top' | 'front' | 'side' | 'back'
+StepViewer.setCut("z", 0.5)        // axis, position 0–1
+StepViewer.captureFrame()          // → JPEG data-URL of current frame
+StepViewer.captureAll()            // → { views: [...], sections: [...] }, single camera pass
+StepViewer.onModelLoad(cb)         // cb({payload}) on each model load; returns unsubscribe fn
+StepViewer.getModelInfo()          // → { id, name, analysis } | null
+```
+
+three.js r160, camera up = +Z, CSS2D labels for dimension lines drawn like a technical drawing.
+Section plane = one `THREE.Plane` on every material; the cut face reads as solid because each mesh
+has a `BackSide` ochre twin. Measure (raycast, two points), explode (radial offset), revision overlay
+(translucent red clone + delta table). `preserveDrawingBuffer: true` on the renderer allows canvas
+captures from outside the render loop.
+
+**AI analysis** — `POST /api/models/{id}/ai-analysis` requires `ANTHROPIC_API_KEY`.
+Sends 8 JPEG captures + numerical summary to `claude-sonnet-5-5`; streams the response
+as Server-Sent Events (`text/event-stream`). Replace the endpoint URL in `analysis.js` to
+point at any vision-capable LLM backend.
 
 ## Build (`standalone/`)
 
@@ -62,5 +80,4 @@ software WebGL; needs the server on port 8765). Samples: `featuretype.step` (sin
 ## Limits
 
 Mesh-based (no feature tree, tolerance-bound measurements); units assumed mm; wall thickness is one number per
-part; packing is a single-orientation grid; the AI only sees captures and numbers; instances detected by name +
-mesh signature.
+part; the AI only sees captures and numbers; instances detected by name + mesh signature.

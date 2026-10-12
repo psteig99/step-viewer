@@ -1,11 +1,12 @@
-"""Tests: loading, analysis, packing, reports, export, CLI."""
+"""Tests: loading, analysis, reports, export, CLI."""
 from pathlib import Path
 
 import pytest
 
-from stepviewer import analyse, fit_in_container, load_step
+pytest.importorskip("cascadio", reason="cascadio not installed")
+
+from stepviewer import analyse, load_step
 from stepviewer.export import export_scene
-from stepviewer.fit import fit_on_pallet
 from stepviewer.loader import StepLoadError
 from stepviewer.report import csv_report, html_report, json_report, text_report
 
@@ -43,15 +44,6 @@ def test_unknown_material(scene):
 def test_missing_file():
     with pytest.raises(StepLoadError):
         load_step("doesnotexist.step")
-
-
-def test_fit():
-    r = fit_in_container((100, 50, 30), (400, 300, 250), clearance=0)
-    assert r.quantity == 4 * 6 * 8 or r.quantity >= 192
-    r2 = fit_in_container((100, 50, 30), (400, 300, 250), clearance=2, allow_rotation=False)
-    assert r2.per_axis == (3, 5, 7)
-    p = fit_on_pallet((400, 300, 250), "euro", max_height=1800)
-    assert p.quantity == 3 * 2 * 6 or p.quantity >= 36
 
 
 def test_reports(scene, info, tmp_path):

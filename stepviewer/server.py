@@ -1,11 +1,13 @@
-"""Web server: API + interface (drag-and-drop, 3D viewer, analysis, packing).
+"""Web server: API + interface (drag-and-drop, 3D viewer, analysis).
 
 Launch: stepviewer web [--port 8000] [--network]
         uvicorn stepviewer.server:app --reload       (development)
 """
 from __future__ import annotations
 
+import asyncio
 import base64
+import json
 import logging
 import os
 import secrets
@@ -18,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -27,7 +29,6 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .analysis import MATERIALS, ModelInfo, analyse, interference_check
 from .export import SUPPORTED, export_scene
-from .fit import PALLETS, fit_in_container, fit_on_pallet
 from .loader import StepLoadError, load_step
 from .report import html_report, json_report
 
@@ -53,6 +54,19 @@ class StoredModel:
 
 
 class Store:
+    """In-memory registry of uploaded models with TTL-based eviction.
+
+    Lifecycle:
+      1. **Upload** — ``add()`` saves the raw STEP bytes, tessellates the file,
+         runs the analysis, and registers a :class:`StoredModel` keyed by a
+         random 12-char hex ID.
+      2. **Access** — ``get()`` refreshes the model's ``touched`` timestamp,
+         keeping it alive as long as the session is active.
+      3. **Purge** — ``purge()`` is called after every upload and removes any
+         model whose ``touched`` time is older than ``MODEL_TTL_S`` (6 h),
+         deleting the associated temp folder from disk.
+    """
+
     def __init__(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="stepviewer-web-"))
         self.models: dict[str, StoredModel] = {}
@@ -75,10 +89,11 @@ class Store:
         return m
 
     def get(self, mid: str) -> StoredModel:
-        m = self.models.get(mid)
-        if m is None:
-            raise HTTPException(404, "Model not found or expired: re-upload the file.")
-        m.touched = time.time()
+        with self.lock:
+            m = self.models.get(mid)
+            if m is None:
+                raise HTTPException(404, "Model not found or expired: re-upload the file.")
+            m.touched = time.time()
         return m
 
     def purge(self) -> None:
@@ -121,17 +136,6 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 # ----------------------------------------------------------------------------
-class FitRequest(BaseModel):
-    unit: tuple[float, float, float]
-    carton: tuple[float, float, float] = Field(..., description="inner dimensions L, W, H in mm")
-    clearance: float = 0.0
-    allow_rotation: bool = True
-    pallet: str | None = "euro"
-    max_height: float = 1800.0
-    mass_g: float | None = None
-
-
-# ----------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def index() -> HTMLResponse:
     return HTMLResponse((STATIC / "index.html").read_text(encoding="utf-8"))
@@ -144,7 +148,7 @@ def health() -> dict:
 
 @app.get("/api/materials")
 def materials() -> dict:
-    return {"materials": MATERIALS, "pallets": PALLETS}
+    return {"materials": MATERIALS}
 
 
 @app.post("/api/models")
@@ -152,13 +156,13 @@ async def upload(file: UploadFile = File(...), tol: float = Query(DEFAULT_TOL, g
     name = file.filename or "model.step"
     if Path(name).suffix.lower() not in {".step", ".stp"}:
         raise HTTPException(415, f"'{name}' is not a STEP file (.step / .stp).")
-    data = await file.read()
+    data = await file.read(MAX_UPLOAD_MB * 1024 * 1024 + 1)
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"File too large (max {MAX_UPLOAD_MB} MB).")
     if not data:
         raise HTTPException(400, "Empty file.")
     try:
-        m = store.add(name, data, tol)
+        m = await asyncio.get_running_loop().run_in_executor(None, store.add, name, data, tol)
     except StepLoadError as exc:
         raise HTTPException(422, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
@@ -168,6 +172,7 @@ async def upload(file: UploadFile = File(...), tol: float = Query(DEFAULT_TOL, g
 
 
 def _payload(m: StoredModel) -> dict:
+    """Build the JSON response body for a stored model."""
     d = m.info.to_dict()
     hits = interference_check(m.scene) if len(m.scene.geometry) > 1 else []
     return {
@@ -198,8 +203,9 @@ def model_export(mid: str, ext: str) -> FileResponse:
     ext = ext.lower()
     if ext not in SUPPORTED:
         raise HTTPException(400, f"Format .{ext} not supported ({', '.join(SUPPORTED)}).")
-    if ext not in m.exports:
-        m.exports[ext] = export_scene(m.scene, m.folder / f"export.{ext}")
+    with store.lock:
+        if ext not in m.exports:
+            m.exports[ext] = export_scene(m.scene, m.folder / f"export.{ext}")
     return FileResponse(m.exports[ext], filename=f"{Path(m.name).stem}.{ext}")
 
 
@@ -225,6 +231,74 @@ def model_json(mid: str, material: str | None = None, density: float | None = No
     return FileResponse(out, media_type="application/json", filename=f"{Path(m.name).stem}_analysis.json")
 
 
+class AiAnalysisRequest(BaseModel):
+    images: list[str]       # base64 data-URIs (JPEG)
+    analysis: dict
+
+
+@app.post("/api/models/{mid}/ai-analysis")
+async def model_ai_analysis(mid: str, req: AiAnalysisRequest):
+    """Stream a Claude engineering analysis of the 7 auto-captured views.
+
+    Requires ANTHROPIC_API_KEY. Returns a text/event-stream of JSON deltas:
+      data: {"delta": "..."}\n\n  — streamed text chunks
+      data: [DONE]\n\n           — end of stream
+      data: {"error": "..."}\n\n — on failure
+    """
+    store.get(mid)
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise HTTPException(503, "AI analysis not configured — set ANTHROPIC_API_KEY.")
+    try:
+        from anthropic import AsyncAnthropic  # optional dep: pip install anthropic
+    except ImportError:
+        raise HTTPException(503, "anthropic not installed: pip install anthropic")
+
+    a = req.analysis
+    dims = a.get("dimensions_mm", [])
+    summary = (
+        f"File: {a.get('filename','?')}. "
+        f"Parts: {a.get('parts','?')}. "
+        f"Dims: {' × '.join(str(round(v,1)) for v in dims)} mm. "
+        f"Material vol: {a.get('material_volume_cm3','?')} cm³. "
+        f"Fill rate: {a.get('fill_rate_pct','?')}%. "
+        f"Warnings: {'; '.join(a.get('warnings', [])) or 'none'}."
+    )
+    content: list[dict] = [{"type": "text", "text":
+        f"You are a packaging engineer reviewing a 3D STEP part.\n"
+        f"I am sending 5 standard views (Iso, Top, Front, Right, Back) + 3 section cuts (X, Y, Z).\n"
+        f"Data: {summary}\n\n"
+        f"Provide a concise analysis covering these 4 points — no Recommendations section:\n"
+        f"1. Overall geometry and shape\n"
+        f"2. Symmetry and notable features\n"
+        f"3. What the cuts reveal (wall thickness, hollows, internal structure)\n"
+        f"4. Manufacturing / packaging considerations\n\n"
+        f"End with one summary sentence."}]
+    for uri in req.images:
+        if "," not in uri:
+            continue
+        _, b64 = uri.split(",", 1)
+        content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
+
+    async def stream():
+        try:
+            client = AsyncAnthropic(api_key=api_key)
+            async with client.messages.stream(
+                model="claude-sonnet-5-5",
+                max_tokens=1024,
+                messages=[{"role": "user", "content": content}],
+            ) as s:
+                async for text in s.text_stream:
+                    yield f"data: {json.dumps({'delta': text})}\n\n"
+        except Exception as exc:
+            log.exception("AI analysis failed")
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.delete("/api/models/{mid}")
 def model_delete(mid: str) -> dict:
     m = store.get(mid)
@@ -232,24 +306,6 @@ def model_delete(mid: str) -> dict:
         store.models.pop(mid, None)
     shutil.rmtree(m.folder, ignore_errors=True)
     return {"deleted": mid}
-
-
-@app.post("/api/fit")
-def fit(req: FitRequest) -> dict:
-    try:
-        carton = fit_in_container(req.unit, req.carton, clearance=req.clearance, allow_rotation=req.allow_rotation)
-        out: dict = {"carton": carton.to_dict()}
-        if req.pallet:
-            pal = fit_on_pallet(req.carton, req.pallet, max_height=req.max_height)
-            out["pallet"] = pal.to_dict()
-            out["units_per_pallet"] = pal.quantity * carton.quantity
-        if req.mass_g:
-            out["mass_per_carton_kg"] = round(carton.quantity * req.mass_g / 1000, 2)
-            if req.pallet:
-                out["mass_per_pallet_kg"] = round(out["units_per_pallet"] * req.mass_g / 1000, 1)
-        return out
-    except (ValueError, KeyError) as exc:
-        raise HTTPException(400, str(exc)) from exc
 
 
 def run(host: str = "127.0.0.1", port: int = 8000, reload: bool = False, password: str | None = None) -> None:

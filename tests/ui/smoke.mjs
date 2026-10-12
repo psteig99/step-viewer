@@ -33,8 +33,6 @@ console.log("mesure :", await page.$eval("#measure-hud", (e) => e.textContent.sp
 await page.keyboard.press("Escape"); await page.keyboard.press("p"); await wait(300);
 await page.keyboard.press("p");
 await page.$eval("#explode", (e) => { e.value = 1; e.dispatchEvent(new Event("input")); });
-await page.waitForFunction(() => document.querySelector("#fit-result .fit-cell"), { timeout: 20000 });
-console.log("colisage :", await page.$eval("#fit-result .fit-cell .v", (e) => e.textContent.trim()));
 await page.screenshot({ path: "smoke.png" });
 await browser.close();
 

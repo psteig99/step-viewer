@@ -95,6 +95,22 @@
 
     <div class="warnings" id="warnings"></div>
 
+    <section class="block" id="views-block" hidden>
+      <h2>Standard views</h2>
+      <div class="view-grid" id="view-grid"></div>
+    </section>
+
+    <section class="block" id="sections-block" hidden>
+      <h2>Section cuts</h2>
+      <div class="section-grid" id="section-grid"></div>
+    </section>
+
+    <section class="block" id="ai-block">
+      <h2>AI analysis</h2>
+      <button class="btn btn-full" id="ai-btn" type="button">Analyze with AI</button>
+      <div class="ai-output" id="ai-output" hidden></div>
+    </section>
+
     <section class="block">
       <h2>Dimensions</h2>
       <div class="dims" id="dims"></div>
@@ -127,30 +143,11 @@
     </section>
 
     <section class="block">
-      <h2>Packing</h2>
-      <div class="fit-form">
-        <div class="field-row three">
-          <label>Box interior (mm)
-            <span class="triple">
-              <input type="number" id="fit-L" value="400" min="1"> <input type="number" id="fit-l" value="300" min="1"> <input type="number" id="fit-h" value="250" min="1">
-            </span>
-          </label>
-        </div>
-        <div class="field-row">
-          <label>Clearance per unit <input type="number" id="fit-jeu" value="1" min="0" step="0.5"> mm</label>
-          <label class="check"><input type="checkbox" id="fit-rot" checked> allow rotation</label>
-        </div>
-        <div class="field-row">
-          <label>Pallet <select id="fit-pallet"></select></label>
-          <label>Max H <input type="number" id="fit-hmax" value="1800" min="300" step="10"> mm</label>
-        </div>
-      </div>
-      <div class="fit-result" id="fit-result"></div>
-    </section>
-
-    <section class="block">
       <h2>Download</h2>
       <div class="downloads" id="downloads"></div>
+      <button class="btn btn-outline export-views-btn" id="export-views-btn" type="button" hidden>
+        ↓ Export views (ZIP)
+      </button>
     </section>
 
     <section class="block shortcuts">

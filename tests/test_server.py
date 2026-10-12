@@ -21,7 +21,7 @@ def test_index_and_static():
 
 def test_materials():
     d = client.get("/api/materials").json()
-    assert "pet" in d["materials"] and "euro" in d["pallets"]
+    assert "pet" in d["materials"]
 
 
 def test_upload_flow():
@@ -45,14 +45,6 @@ def test_upload_flow():
 def test_upload_rejects_non_step():
     r = client.post("/api/models", files={"file": ("notes.txt", b"hello", "text/plain")})
     assert r.status_code == 415
-
-
-def test_fit():
-    r = client.post("/api/fit", json={"unit": [100, 50, 30], "carton": [400, 300, 250], "clearance": 0, "mass_g": 100})
-    assert r.status_code == 200
-    d = r.json()
-    assert d["carton"]["quantity"] >= 192 and d["units_per_pallet"] > 0 and d["mass_per_carton_kg"] > 0
-    assert client.post("/api/fit", json={"unit": [100, 50, 30], "carton": [400, 300, 250], "pallet": "mars"}).status_code == 400
 
 
 def test_password(monkeypatch):
