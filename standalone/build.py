@@ -6,7 +6,7 @@ html = (SRC/'index.html').read_text()
 js = Path('bundle.js').read_text()
 wasm = base64.b64encode(Path('occt.wasm.gz').read_bytes()).decode()
 
-# Adaptations de la page
+# Page adaptations
 css = css.replace('@media (prefers-color-scheme: dark) {\n  :root {', '@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"]) {')
 css += '''
 :root[data-theme="dark"] { --bench: #23282e; --paper: #1b1f24; --ink: #e8ecf1; --ink-2: #9aa5b3; --rule: #343b44;
@@ -19,27 +19,27 @@ html = html.replace('<link rel="stylesheet" href="/static/app.css">', '<style>\n
 html = re.sub(r'<script type="importmap">.*?</script>\n', '', html, flags=re.S)
 html = html.replace('<meta name="viewport" content="width=device-width, initial-scale=1">',
                     '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">')
-html = html.replace('<p class="drop-hint">La pièce est lue sur ce serveur, puis affichée ici avec ses cotes. Rien n\'est envoyé ailleurs.</p>',
-                    '<p class="drop-hint">Tout se passe dans votre navigateur : le fichier n\'est envoyé sur aucun serveur.</p>')
+html = html.replace('<p class="drop-hint">The part is read on this server, then displayed here with its dimensions. Nothing is sent elsewhere.</p>',
+                    '<p class="drop-hint">Everything happens in your browser: the file is not sent to any server.</p>')
 html = html.replace('''      <div class="downloads" id="downloads"></div>''','''      <div class="downloads" id="downloads">
-        <button class="dl" data-export="html">Rapport HTML</button>
-        <button class="dl" data-export="json">Analyse JSON</button>
+        <button class="dl" data-export="html">HTML report</button>
+        <button class="dl" data-export="json">JSON analysis</button>
         <button class="dl" data-export="stl">STL</button>
         <button class="dl" data-export="obj">OBJ</button>
         <button class="dl" data-export="glb">GLB</button>
-        <button class="dl" data-export="png">Capture PNG</button>
+        <button class="dl" data-export="png">PNG screenshot</button>
       </div>
       <div class="field-row">
-        <label for="quality">Finesse de lecture</label>
+        <label for="quality">Reading quality</label>
         <select id="quality">
-          <option value="0.002">rapide</option>
-          <option value="0.001" selected>normale</option>
+          <option value="0.002">fast</option>
+          <option value="0.001" selected>normal</option>
           <option value="0.0004">fine</option>
         </select>
       </div>''')
 html = html.replace('<script type="module" src="/static/app.js"></script>',
     '<script type="text/plain" id="occt-wasm">' + wasm + '</script>\n<script>\n' + js + '\n</script>')
-# tokens de thème : fond explicite déjà présent ; CSS2D/measure ok.
-html = html.replace('<title>STEP Viewer – packaging</title>', '<title>STEP Viewer – packaging</title>\n<meta name="description" content="Visionneuse de fichiers CAD STEP pour le packaging, entièrement dans le navigateur.">')
+# Theme tokens: explicit background already present; CSS2D/measure ok.
+html = html.replace('<title>STEP Viewer – packaging</title>', '<title>STEP Viewer – packaging</title>\n<meta name="description" content="CAD STEP file viewer for packaging, entirely in the browser.">')
 Path('step-viewer.html').write_text(html)
-print(len(html)/1e6, 'Mo')
+print(len(html)/1e6, 'MB')

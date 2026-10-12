@@ -14,7 +14,7 @@ export function analysePart(name, pos, idx) {
   for (let i = 0; i < pos.length; i += 3) for (let k = 0; k < 3; k++) { if (pos[i + k] < min[k]) min[k] = pos[i + k]; if (pos[i + k] > max[k]) max[k] = pos[i + k]; }
   let vol = 0, area = 0;
   const edges = new Map();
-  const addEdge = (a, b) => { const k = a < b ? a * 4294967296 + b : b * 4294967296 + a; edges.set(k, (edges.get(k) || 0) + 1); };
+  const addEdge = (a, b) => { const k = a < b ? `${a},${b}` : `${b},${a}`; edges.set(k, (edges.get(k) || 0) + 1); };
   for (let i = 0; i < idx.length; i += 3) {
     const a = idx[i], b = idx[i + 1], c = idx[i + 2];
     const ax = pos[a * 3], ay = pos[a * 3 + 1], az = pos[a * 3 + 2];
@@ -71,10 +71,10 @@ export function analyseModel(fileName, parts) {
   if (Math.max(...ext) > 3000) warnings.push("Dimensions > 3 m: check STEP units (inches? metres?).");
   if (Math.max(...ext) < 1) warnings.push("Dimensions < 1 mm: check STEP units.");
   const overlaps = [];
-  for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+  outer: for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
     const a = parts[i], b = parts[j];
     if (a.min[0] < b.max[0] && b.min[0] < a.max[0] && a.min[1] < b.max[1] && b.min[1] < a.max[1] && a.min[2] < b.max[2] && b.min[2] < a.max[2]) overlaps.push([a.name, b.name]);
-    if (overlaps.length >= 50) break;
+    if (overlaps.length >= 50) break outer;
   }
   return {
     filename: fileName, parts: parts.length, triangles: tris, min, max,

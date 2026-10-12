@@ -31,10 +31,28 @@ const state = {
 
 const $ = (s) => document.querySelector(s);
 const el = {
-  layout: $("#layout"), stage: $("#stage"), viewport: $("#viewport"), drop: $("#drop"), loading: $("#loading"),
-  loadingText: $("#loading-text"), toolbar: $("#toolbar"), clipPanel: $("#clip-panel"), clipPos: $("#clip-pos"),
-  clipValue: $("#clip-value"), hud: $("#measure-hud"), hint: $("#hint"), panel: $("#panel"), models: $("#models"),
-  fileInput: $("#file-input"), toast: $("#toast"), explode: $("#explode"),
+  // Layout
+  layout:      $("#layout"),
+  stage:       $("#stage"),
+  viewport:    $("#viewport"),
+  // File drop & loading overlay
+  drop:        $("#drop"),
+  loading:     $("#loading"),
+  loadingText: $("#loading-text"),
+  // Toolbar & side panel
+  toolbar:     $("#toolbar"),
+  panel:       $("#panel"),
+  models:      $("#models"),
+  fileInput:   $("#file-input"),
+  explode:     $("#explode"),
+  // Section-cut controls
+  clipPanel:   $("#clip-panel"),
+  clipPos:     $("#clip-pos"),
+  clipValue:   $("#clip-value"),
+  // Overlays
+  hud:         $("#measure-hud"),
+  hint:        $("#hint"),
+  toast:       $("#toast"),
 };
 
 /* ------------------------------------------------------------------------ */
@@ -77,7 +95,29 @@ function resize() {
 }
 new ResizeObserver(resize).observe(el.viewport);
 resize();
-(function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera); })();
+function loop() {
+  requestAnimationFrame(loop);
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+loop();
+
+/* ------------------------------------------------------------------------ */
+/*  Material helpers                                                         */
+/* ------------------------------------------------------------------------ */
+function buildPartMaterial(color) {
+  return new THREE.MeshStandardMaterial({
+    color, metalness: 0.05, roughness: 0.55,
+    flatShading: true, side: THREE.DoubleSide, clippingPlanes: [],
+  });
+}
+function buildInnerMaterial() {
+  return new THREE.MeshStandardMaterial({
+    color: INNER_COLOR, roughness: 0.9, metalness: 0,
+    flatShading: true, side: THREE.BackSide, clippingPlanes: [],
+  });
+}
 
 /* ------------------------------------------------------------------------ */
 /*  File loading                                                             */
@@ -120,13 +160,21 @@ function registerModel(payload, group) {
     const name = resolvePartName(o, byName);
     o.name = name;
     if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
-    o.material = new THREE.MeshStandardMaterial({ color: PALETTE[i % PALETTE.length], metalness: 0.05, roughness: 0.55,
-      flatShading: true, side: THREE.DoubleSide, clippingPlanes: [] });
-    o.userData.index = i; o.userData.baseColor = o.material.color.getHex(); o.userData.basePos = o.position.clone();
-    const inner = new THREE.Mesh(o.geometry, new THREE.MeshStandardMaterial({ color: INNER_COLOR, roughness: 0.9, metalness: 0,
-      flatShading: true, side: THREE.BackSide, clippingPlanes: [] }));
-    inner.name = `${name}__inner`; inner.visible = false; o.add(inner); o.userData.inner = inner;
-    parts.set(name, o); i++;
+
+    const color = PALETTE[i % PALETTE.length];
+    o.material = buildPartMaterial(color);
+    o.userData.index     = i;
+    o.userData.baseColor = color;
+    o.userData.basePos   = o.position.clone();
+
+    const inner = new THREE.Mesh(o.geometry, buildInnerMaterial());
+    inner.name    = `${name}__inner`;
+    inner.visible = false;
+    o.add(inner);
+    o.userData.inner = inner;
+
+    parts.set(name, o);
+    i++;
   });
   group.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(group);
@@ -230,16 +278,23 @@ function applyFlags() {
   const m = cur(); if (!m) return;
   m.dims.visible = state.flags.dims;
   if (grid) grid.visible = state.flags.grid;
+  const { wire, alpha, clip } = state.flags;
+  const planes = clip ? [state.clip.plane] : [];
   m.parts.forEach((mesh) => {
-    const mat = mesh.material, inner = mesh.userData.inner;
-    mat.wireframe = state.flags.wire;
-    mat.transparent = state.flags.alpha; mat.opacity = state.flags.alpha ? 0.35 : 1; mat.depthWrite = !state.flags.alpha;
-    mat.clippingPlanes = state.flags.clip ? [state.clip.plane] : [];
-    mat.side = state.flags.clip && !state.flags.alpha ? THREE.FrontSide : THREE.DoubleSide;
-    mat.needsUpdate = true;
-    inner.visible = state.flags.clip && !state.flags.wire && !state.flags.alpha;
-    inner.material.clippingPlanes = state.flags.clip ? [state.clip.plane] : [];
-    inner.material.needsUpdate = true;
+    const mat   = mesh.material;
+    const inner = mesh.userData.inner;
+
+    mat.wireframe      = wire;
+    mat.transparent    = alpha;
+    mat.opacity        = alpha ? 0.35 : 1;
+    mat.depthWrite     = !alpha;
+    mat.clippingPlanes = planes;
+    mat.side           = clip && !alpha ? THREE.FrontSide : THREE.DoubleSide;
+    mat.needsUpdate    = true;
+
+    inner.visible                 = clip && !wire && !alpha;
+    inner.material.clippingPlanes = planes;
+    inner.material.needsUpdate    = true;
   });
   compareRoot.traverse((o) => { if (o.isMesh) { o.material.clippingPlanes = state.flags.clip ? [state.clip.plane] : []; o.material.needsUpdate = true; } });
   el.viewport.classList.toggle("measuring", state.flags.measure);
@@ -380,7 +435,12 @@ function focusPart(name, m, fromViewport) {
   if (fromViewport) li?.scrollIntoView({ block: "nearest" });
   const d = m.payload.analysis.details.find((p) => p.name === name);
   if (d) hint(`${name} : ${d.dimensions_mm.map(fmt).join(" × ")} mm${d.volume_cm3 != null ? ` · ${fmt(d.volume_cm3)} cm³` : ""}`);
-  clearTimeout(focusPart.t); focusPart.t = setTimeout(() => { m.parts.forEach((mesh) => mesh.material.emissive.setHex(0)); document.querySelectorAll(".part.focus").forEach((x) => x.classList.remove("focus")); if (!state.flags.measure && !state.flags.clip) hint(null); }, 2500);
+  clearTimeout(focusPart.t);
+  focusPart.t = setTimeout(() => {
+    m.parts.forEach((mesh) => mesh.material.emissive.setHex(0));
+    document.querySelectorAll(".part.focus").forEach((x) => x.classList.remove("focus"));
+    if (!state.flags.measure && !state.flags.clip) hint(null);
+  }, 2500);
 }
 
 function renderDownloads(m) {
@@ -451,7 +511,15 @@ async function closeModel(id) {
   if (state.current === id) {
     const next = [...state.models.keys()].pop();
     if (next) showModel(next);
-    else { modelRoot.clear(); helpers.clear(); compareRoot.clear(); clearMeasure(); state.current = null; el.drop.classList.remove("minimised"); el.toolbar.hidden = true; el.panel.hidden = true; el.layout.classList.add("no-panel"); hint(null); resize(); }
+    else {
+      modelRoot.clear(); helpers.clear(); compareRoot.clear(); clearMeasure();
+      state.current = null;
+      el.drop.classList.remove("minimised");
+      el.toolbar.hidden = true;
+      el.panel.hidden   = true;
+      el.layout.classList.add("no-panel");
+      hint(null); resize();
+    }
   }
 }
 
@@ -557,12 +625,29 @@ el.explode.addEventListener("input", (e) => setExplode(parseFloat(e.target.value
 el.clipPos.addEventListener("input", (e) => { state.clip.pos = parseFloat(e.target.value); updateClip(); });
 $("#clip-flip").addEventListener("click", () => { state.clip.flip = !state.clip.flip; updateClip(); });
 el.clipPanel.querySelectorAll("[data-axis]").forEach((b) => b.addEventListener("click", () => {
-  state.clip.axis = b.dataset.axis; el.clipPanel.querySelectorAll("[data-axis]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); updateClip();
+  state.clip.axis = b.dataset.axis;
+  el.clipPanel.querySelectorAll("[data-axis]").forEach((x) =>
+    x.setAttribute("aria-pressed", String(x === b)));
+  updateClip();
 }));
 
-$("#compare").addEventListener("change", (e) => { const m = cur(); if (!m) return; m.compareWith = e.target.value || null; applyCompare(m); });
-$("#material").addEventListener("change", (e) => { const m = cur(); if (!m) return; m.material = e.target.value; m.density = ""; $("#density").value = ""; renderFacts(m); renderDownloads(m); });
-$("#density").addEventListener("input", (e) => { const m = cur(); if (!m) return; m.density = e.target.value; if (m.density) { m.material = ""; $("#material").value = ""; } renderFacts(m); renderDownloads(m); });
+$("#compare").addEventListener("change", (e) => {
+  const m = cur(); if (!m) return;
+  m.compareWith = e.target.value || null;
+  applyCompare(m);
+});
+$("#material").addEventListener("change", (e) => {
+  const m = cur(); if (!m) return;
+  m.material = e.target.value;
+  m.density = ""; $("#density").value = "";
+  renderFacts(m); renderDownloads(m);
+});
+$("#density").addEventListener("input", (e) => {
+  const m = cur(); if (!m) return;
+  m.density = e.target.value;
+  if (m.density) { m.material = ""; $("#material").value = ""; }
+  renderFacts(m); renderDownloads(m);
+});
 
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, select, textarea")) return;

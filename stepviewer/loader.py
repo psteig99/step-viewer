@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import tempfile
 from pathlib import Path
 
@@ -32,9 +33,15 @@ def _cache_key(path: Path, tol_linear: float, tol_angular: float) -> Path:
 
 
 def step_to_glb(path: Path, tol_linear: float = 0.2, tol_angular: float = 0.3, use_cache: bool = True) -> Path:
-    """Converts a STEP to GLB (cached in the temp directory).
+    """Convert a STEP file to GLB via cascadio, with file-level caching.
 
-    tol_linear: chord deviation in mm (smaller = finer, heavier).
+    The cache key encodes the file path, size, mtime, and both tolerances, so
+    stale entries are never served after the source file changes.  The GLB is
+    written to a ``.tmp`` file first and renamed with ``os.replace()`` — an
+    atomic operation on POSIX and Windows — so concurrent workers never see a
+    partially written file.
+
+    tol_linear: chord deviation in mm (smaller = finer mesh, larger file).
     tol_angular: angular deviation in radians.
     """
     import cascadio  # late import: clearer error message
@@ -45,8 +52,10 @@ def step_to_glb(path: Path, tol_linear: float = 0.2, tol_angular: float = 0.3, u
         return glb
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     log.info("Tessellating %s (tol %.3f mm / %.2f rad)", path.name, tol_linear, tol_angular)
+    tmp = glb.with_suffix(".tmp")
     # cascadio works in metres: convert tolerance
-    cascadio.step_to_glb(str(path), str(glb), tol_linear=tol_linear / MM_PER_M, tol_angular=tol_angular)
+    cascadio.step_to_glb(str(path), str(tmp), tol_linear=tol_linear / MM_PER_M, tol_angular=tol_angular)
+    os.replace(tmp, glb)  # atomic: safe under concurrent workers
     return glb
 
 
@@ -104,7 +113,13 @@ def load_step(path: str | Path, tol_linear: float = 0.2, tol_angular: float = 0.
 
 
 def _clean_name(name: str) -> str:
-    """Makes a part name readable (STEP files often contain raw IDs)."""
+    """Sanitise a raw STEP/glTF node ID into a human-readable part name.
+
+    STEP files routinely use numeric entity IDs (e.g. ``#47``) or OpenCASCADE
+    internal labels (e.g. ``geometry_0_0``) as node names.  This function
+    replaces those with a stable ``"part"`` fallback so that downstream code
+    (reports, the web UI) shows something meaningful instead of opaque IDs.
+    """
     name = name.replace("/", "_").strip()
     if not name or name.startswith("world") or name.startswith("geometry_"):
         return "part"
@@ -121,6 +136,8 @@ def find_step_files(folder: str | Path, recursive: bool = True) -> list[Path]:
 def combined_mesh(scene: trimesh.Scene) -> trimesh.Trimesh:
     """Merges all parts into a single mesh (for STL, global calculations)."""
     meshes = [g for g in scene.geometry.values() if isinstance(g, trimesh.Trimesh)]
+    if not meshes:
+        raise StepLoadError("Scene contains no mesh geometry.")
     return trimesh.util.concatenate(meshes) if len(meshes) > 1 else meshes[0].copy()
 
 

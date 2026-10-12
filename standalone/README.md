@@ -1,31 +1,31 @@
-# Version autonome (un seul fichier HTML)
+# Standalone version (single HTML file)
 
-`step-viewer.html` est la même application que l'interface web, mais **sans serveur** : la lecture du STEP est faite
-par OpenCASCADE compilé en WebAssembly (`occt-import-js`), l'analyse et le colisage sont réécrits en JavaScript
-(`src/engine.js`). Le fichier s'ouvre en double-clic, s'envoie par mail, se dépose sur un intranet ou SharePoint,
-et aucune donnée ne quitte le navigateur.
+`step-viewer.html` is the same application as the web interface, but **without a server**: STEP reading is handled
+by OpenCASCADE compiled to WebAssembly (`occt-import-js`), and the analysis and packaging calculations are
+rewritten in JavaScript (`src/engine.js`). The file opens with a double-click, can be emailed, dropped on an
+intranet or SharePoint, and no data leaves the browser.
 
-Reconstruire après une modification de `src/` ou de `../stepviewer/static/index.html` / `app.css` :
+Rebuild after modifying `src/` or `../stepviewer/static/index.html` / `app.css`:
 
 ```bash
 cd standalone
 npm install
-npm run build      # produit step-viewer.html (~5 Mo)
+npm run build      # produces step-viewer.html (~5 MB)
 ```
 
-Différences avec la version serveur : pas d'encombrement orienté minimal, rapport HTML avec capture d'écran au lieu de
-la 3D intégrée, pas d'export 3MF. Lecture d'un STEP typique : 1 à 3 s sur un PC de bureau.
+Differences from the server version: no minimum oriented bounding box, HTML report with screenshot instead of
+embedded 3D, no 3MF export. Reading a typical STEP file: 1 to 3 s on a desktop PC.
 
-## Interface simple « Coupe + analyse IA »
+## Simple interface "Section + AI analysis"
 
-`simple/coupe-step-ia.html` : trois étapes seulement — déposer le STEP, couper selon un angle libre (azimut,
-inclinaison, position, côté), analyser la coupe avec Claude. L'analyse IA fonctionne quand la page est publiée
-comme artefact claude.ai (capacité `sample` avec images : la page envoie la capture de la coupe, la vue entière
-et les mesures, sur le compte de la personne qui l'utilise). Ouverte ailleurs, la page propose d'enregistrer la
-capture pour la soumettre à la main. Reconstruire : `npm run build:simple`.
+`simple/coupe-step-ia.html`: three steps only — drop the STEP, section it at a free angle (azimuth,
+elevation, position, side), analyse the section with Claude. AI analysis works when the page is published
+as a claude.ai artifact (the `sample` capability with images: the page sends the section screenshot, the full view
+and the measurements, charged to the account of the person using it). Opened elsewhere, the page offers to save
+the screenshot for manual submission. Rebuild: `npm run build:simple`.
 
-Structure de l'assemblage dans la page simple : l'arbre du STEP (`result.root` d'occt-import-js) est affiché avec
-nœuds repliables, cases afficher/masquer par sous-ensemble, dimensions et volumes sommés, badges d'instances ;
-sélection bidirectionnelle arbre ⇄ 3D avec cadrage ; survol des faces B-rep (`brep_faces`) ; regroupements
-automatiques (couleur, nom, volume, contact) et renommage ; l'arbre indenté et les pièces masquées de chaque coupe
-sont transmis à l'IA.
+Assembly structure in the simple page: the STEP tree (`result.root` from occt-import-js) is displayed with
+collapsible nodes, show/hide checkboxes by sub-assembly, summed dimensions and volumes, instance badges;
+bidirectional tree ⇄ 3D selection with framing; B-rep face hover (`brep_faces`); automatic groupings
+(colour, name, volume, contact) and renaming; the indented tree and hidden parts of each section are
+passed to the AI.

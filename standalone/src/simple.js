@@ -15,14 +15,14 @@ const el = {
 };
 const state = { model: null, cut: { on: false, az: 0, el: 0, pos: 0.5, flip: false }, plane: new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0), turns: [], ctl: null, cuts: [], activeCut: null };
 
-/* ---------------- lecteur STEP (WebAssembly embarqué) ---------------- */
+/* ---------------- STEP reader (embedded WebAssembly) ---------------- */
 let occtPromise = null;
 function getOcct() {
   if (occtPromise) return occtPromise;
   occtPromise = (async () => {
     const b64 = document.getElementById("occt-wasm").textContent.trim();
     const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    if (typeof DecompressionStream === "undefined") throw new Error("Navigateur trop ancien : il faut Chrome/Edge 80+, Firefox 113+ ou Safari 16.4+.");
+    if (typeof DecompressionStream === "undefined") throw new Error("Browser too old: requires Chrome/Edge 80+, Firefox 113+ or Safari 16.4+.");
     const wasmBinary = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
     return occtimportjs({ wasmBinary });
   })();
@@ -31,16 +31,16 @@ function getOcct() {
 }
 
 async function parseStep(file) {
-  el.loadingText.textContent = "Initialisation du lecteur STEP…";
+  el.loadingText.textContent = "Initializing STEP reader…";
   const occt = await getOcct();
-  el.loadingText.textContent = `Lecture de ${file.name}…`;
+  el.loadingText.textContent = `Reading ${file.name}…`;
   await new Promise((r) => setTimeout(r, 30));
   const buf = new Uint8Array(await file.arrayBuffer());
   const res = occt.ReadStepFile(buf, { linearUnit: "millimeter", linearDeflectionType: "bounding_box_ratio", linearDeflection: 0.001, angularDeflection: 0.3 });
-  if (!res.success || !res.meshes.length) throw new Error(`${file.name} : fichier STEP illisible ou sans solide.`);
+  if (!res.success || !res.meshes.length) throw new Error(`${file.name}: unreadable STEP file or no solid.`);
   const used = new Map(), parts = [], group = new THREE.Group(), meshes = [];
   res.meshes.forEach((m, i) => {
-    const baseName = (m.name || "piece").slice(0, 60);
+    const baseName = (m.name || "part").slice(0, 60);
     let name = baseName;
     used.set(name, (used.get(name) || 0) + 1); if (used.get(name) > 1) name = `${name}_${used.get(name)}`;
     const pos = new Float32Array(m.attributes.position.array), idx = new Uint32Array(m.index.array);
@@ -63,47 +63,47 @@ async function parseStep(file) {
   return { analysis: analyseModel(file.name, parts), group, meshes, root: res.root };
 }
 
-/* ---------------- arbre d'assemblage ---------------- */
+/* ---------------- assembly tree ---------------- */
 let nodeSeq = 0;
 function makeNode(name, kind) { return { id: `n${++nodeSeq}`, name, kind, children: [], mesh: null, parent: null, open: true }; }
 
 function buildTreeFromStep(root, meshes) {
-  // Arbre d'origine du STEP : assemblages -> sous-assemblages -> pièces (une feuille par maillage).
+  // Original STEP tree: assemblies -> sub-assemblies -> parts (one leaf per mesh).
   const seen = new Set();
   const build = (n, depth) => {
-    const node = makeNode((n.name || (depth === 0 ? "Assemblage" : "Groupe")).slice(0, 60), "assembly");
+    const node = makeNode((n.name || (depth === 0 ? "Assembly" : "Group")).slice(0, 60), "assembly");
     (n.meshes || []).forEach((mi) => { const mesh = meshes[mi]; if (!mesh || seen.has(mi)) return; seen.add(mi); node.children.push(leafFor(mesh, node)); });
     (n.children || []).forEach((c) => { const child = build(c, depth + 1); if (child.children.length) { child.parent = node; node.children.push(child); } });
     return node;
   };
   let tree = build(root, 0);
   meshes.forEach((mesh, mi) => { if (!seen.has(mi)) tree.children.push(leafFor(mesh, tree)); });
-  // Remonte les niveaux vides (racine sans nom contenant un seul assemblage)
+  // Hoist empty levels (unnamed root containing a single assembly)
   while (tree.children.length === 1 && tree.children[0].kind === "assembly") { tree = tree.children[0]; tree.parent = null; }
   return tree;
 }
 function leafFor(mesh, parent) { const n = makeNode(mesh.name, "part"); n.mesh = mesh; n.parent = parent; mesh.userData.node = n; return n; }
 
 function groupMeshes(meshes, mode) {
-  // Regroupements automatiques pour les STEP mal structurés.
+  // Automatic groupings for poorly-structured STEP files.
   const root = makeNode(state.model.name.replace(/\.(step|stp)$/i, ""), "assembly");
   const groups = new Map();
   const keyOf = (mesh) => {
     const a = mesh.userData.analysis;
     if (mode === "color") return `#${mesh.userData.baseColor.toString(16).padStart(6, "0")}`;
     if (mode === "name") { const n = mesh.userData.baseName; const m = n.match(/^([A-Za-z]+)/); return m ? m[1] : n.split(/[-_ .]/)[0] || n; }
-    if (mode === "volume") { const vmax = Math.max(...meshes.map((x) => x.userData.analysis.volume_cm3 || 0)) || 1; const v = (a.volume_cm3 || 0) / vmax; return v > 0.1 ? "Pièces principales (>10 % du plus gros volume)" : v > 0.01 ? "Pièces moyennes (1 à 10 %)" : "Petites pièces (<1 %)"; }
-    if (mode === "contact") { const big = state.model.biggest; if (mesh === big) return "Pièce principale"; const b = big.userData.analysis, c = a; const touch = [0, 1, 2].every((k) => c.min[k] <= b.max[k] + 0.5 && b.min[k] <= c.max[k] + 0.5); return touch ? "En contact avec la pièce principale" : "Sans contact avec la pièce principale"; }
-    return "Pièces";
+    if (mode === "volume") { const vmax = Math.max(...meshes.map((x) => x.userData.analysis.volume_cm3 || 0)) || 1; const v = (a.volume_cm3 || 0) / vmax; return v > 0.1 ? "Main parts (>10% of largest volume)" : v > 0.01 ? "Medium parts (1 to 10%)" : "Small parts (<1%)"; }
+    if (mode === "contact") { const big = state.model.biggest; if (mesh === big) return "Main part"; const b = big.userData.analysis, c = a; const touch = [0, 1, 2].every((k) => c.min[k] <= b.max[k] + 0.5 && b.min[k] <= c.max[k] + 0.5); return touch ? "In contact with main part" : "Not in contact with main part"; }
+    return "Parts";
   };
   meshes.forEach((mesh) => { const k = keyOf(mesh); if (!groups.has(k)) { const g = makeNode(k, "assembly"); g.parent = root; groups.set(k, g); root.children.push(g); } groups.get(k).children.push(leafFor(mesh, groups.get(k))); });
-  if (mode === "color") root.children.forEach((g) => { const first = g.children[0].mesh; g.name = `Couleur ${g.name}${first.userData.stepColor ? "" : " (attribuée)"}`; g.color = first.userData.baseColor; });
+  if (mode === "color") root.children.forEach((g) => { const first = g.children[0].mesh; g.name = `Colour ${g.name}${first.userData.stepColor ? "" : " (assigned)"}`; g.color = first.userData.baseColor; });
   root.children.sort((a, b) => aggregate(b).volume - aggregate(a).volume);
   return root;
 }
 
 function aggregate(node) {
-  if (node.kind === "part") { const a = node.mesh.userData.analysis; return { min: a.min, max: a.max, volume: a.volume_cm3 || 0, count: 1, closed: a.etanche }; }
+  if (node.kind === "part") { const a = node.mesh.userData.analysis; return { min: a.min, max: a.max, volume: a.volume_cm3 || 0, count: 1, closed: a.watertight }; }
   const acc = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity], volume: 0, count: 0, closed: true };
   node.children.forEach((c) => { const r = aggregate(c); for (let k = 0; k < 3; k++) { acc.min[k] = Math.min(acc.min[k], r.min[k]); acc.max[k] = Math.max(acc.max[k], r.max[k]); } acc.volume += r.volume; acc.count += r.count; acc.closed = acc.closed && r.closed; });
   return acc;
@@ -131,10 +131,10 @@ function renderTree() {
     const li = document.createElement("li"); li.className = `tnode ${node.kind}` + (node === m.selected ? " selected" : ""); li.dataset.id = node.id;
     const agg = aggregate(node), d = [0, 1, 2].map((k) => agg.max[k] - agg.min[k]);
     const vis = nodeVisible(node);
-    const badge = node.kind === "part" && instances.get(node.mesh.userData.signature) > 1 ? `<span class="inst" title="Pièce instanciée ${instances.get(node.mesh.userData.signature)} fois">×${instances.get(node.mesh.userData.signature)}</span>` : "";
+    const badge = node.kind === "part" && instances.get(node.mesh.userData.signature) > 1 ? `<span class="inst" title="Part instantiated ${instances.get(node.mesh.userData.signature)} times">×${instances.get(node.mesh.userData.signature)}</span>` : "";
     const sw = node.kind === "part" ? `<span class="sw" style="background:#${node.mesh.userData.baseColor.toString(16).padStart(6, "0")}"></span>` : node.color != null ? `<span class="sw" style="background:#${node.color.toString(16).padStart(6, "0")}"></span>` : "";
-    const caret = node.kind === "assembly" ? `<button class="caret" aria-label="${node.open ? "Replier" : "Déplier"}">${node.open ? "▾" : "▸"}</button>` : `<span class="caret"></span>`;
-    li.innerHTML = `<div class="trow" style="padding-left:${depth * 14}px">${caret}<input type="checkbox" ${vis === true ? "checked" : ""} aria-label="Afficher ${esc(displayName(node))}">${sw}<span class="tname" title="Double-clic pour renommer">${esc(displayName(node))}</span>${badge}<span class="tmeta">${node.kind === "assembly" ? `${agg.count} pc · ` : ""}${d.map((x) => fmt(x, 1)).join(" × ")}${agg.volume ? ` · ${fmt(agg.volume, 1)} cm³` : ""}${agg.closed ? "" : " · ouvert"}</span></div>`;
+    const caret = node.kind === "assembly" ? `<button class="caret" aria-label="${node.open ? "Collapse" : "Expand"}">${node.open ? "▾" : "▸"}</button>` : `<span class="caret"></span>`;
+    li.innerHTML = `<div class="trow" style="padding-left:${depth * 14}px">${caret}<input type="checkbox" ${vis === true ? "checked" : ""} aria-label="Show ${esc(displayName(node))}">${sw}<span class="tname" title="Double-click to rename">${esc(displayName(node))}</span>${badge}<span class="tmeta">${node.kind === "assembly" ? `${agg.count} pt · ` : ""}${d.map((x) => fmt(x, 1)).join(" × ")}${agg.volume ? ` · ${fmt(agg.volume, 1)} cm³` : ""}${agg.closed ? "" : " · open"}</span></div>`;
     const cb = li.querySelector("input"); cb.indeterminate = vis === "mixed";
     cb.addEventListener("change", (e) => { partsOf(node).forEach((x) => { x.visible = e.target.checked; }); renderTree(); });
     li.querySelector(".caret").addEventListener?.("click", (e) => { if (node.kind === "assembly") { node.open = !node.open; renderTree(); } e.stopPropagation(); });
@@ -147,7 +147,7 @@ function renderTree() {
 }
 
 function renameNode(node) {
-  const current = displayName(node), name = prompt("Nouveau nom :", current);
+  const current = displayName(node), name = prompt("New name:", current);
   if (name === null) return; const key = node.kind === "part" ? node.mesh.name : node.name;
   if (name.trim() && name.trim() !== node.name) state.model.renames[key] = name.trim(); else delete state.model.renames[key];
   persistRenames(); renderTree();
@@ -174,7 +174,7 @@ function selectNode(node, frame) {
 }
 function clearSelection() { const m = state.model; if (!m) return; m.selected = null; m.meshes.forEach((x) => x.material.emissive.setHex(0)); renderTree(); if (!state.cut.on) hint(null); }
 
-/* ---------------- survol : identification des faces B-rep ---------------- */
+/* ---------------- hover: B-rep face identification ---------------- */
 const faceHighlight = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.55, depthTest: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide, clippingPlanes: [] }));
 faceHighlight.visible = false; faceHighlight.renderOrder = 5;
 const faceLabelDiv = document.createElement("div"); faceLabelDiv.className = "lbl face";
@@ -185,11 +185,11 @@ function showFace(mesh, fi, point) {
   const f = mesh.userData.faces[fi]; const idx = mesh.geometry.index.array.subarray(f.first * 3, (f.last + 1) * 3);
   const g = faceHighlight.geometry; g.setAttribute("position", mesh.geometry.getAttribute("position")); g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1)); g.computeBoundingSphere();
   faceHighlight.position.copy(mesh.position); faceHighlight.visible = true; faceHighlight.material.clippingPlanes = state.cut.on ? [state.plane] : [];
-  faceLabelDiv.textContent = `${displayName(mesh.userData.node)} · face n° ${fi + 1}/${mesh.userData.faces.length}`; faceLabel.position.copy(point); faceLabel.visible = true;
+  faceLabelDiv.textContent = `${displayName(mesh.userData.node)} · face no. ${fi + 1}/${mesh.userData.faces.length}`; faceLabel.position.copy(point); faceLabel.visible = true;
   hover = { mesh, face: fi };
 }
 function hideFace() { if (!faceHighlight.visible) return; faceHighlight.visible = false; faceLabel.visible = false; hover = { mesh: null, face: -1 }; }
-/* ---------------- scène ---------------- */
+/* ---------------- scene ---------------- */
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.localClippingEnabled = true; renderer.outputColorSpace = THREE.SRGBColorSpace;
 el.viewport.appendChild(renderer.domElement);
@@ -209,10 +209,10 @@ function resize() { const w = el.viewport.clientWidth, h = el.viewport.clientHei
 new ResizeObserver(resize).observe(el.viewport); resize();
 (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera); })();
 
-/* ---------------- chargement ---------------- */
+/* ---------------- loading ---------------- */
 async function handleFiles(files) {
   const f = [...files].find((x) => /\.(step|stp)$/i.test(x.name));
-  if (!f) return toast("Déposez un fichier .step ou .stp.", true);
+  if (!f) return toast("Drop a .step or .stp file.", true);
   el.loading.hidden = false;
   try {
     const { analysis, group, meshes, root } = await parseStep(f);
@@ -266,12 +266,12 @@ function buildDimensions(box, span) {
 function fillFile() {
   const m = state.model, a = m.analysis;
   $("#file-name").textContent = m.name;
-  $("#file-meta").textContent = `${(m.size / 1024).toFixed(0)} Ko · ${a.pieces} pièce${a.pieces > 1 ? "s" : ""} · volume matière ${fmt(a.volume_matiere_cm3)} cm³`;
+  $("#file-meta").textContent = `${(m.size / 1024).toFixed(0)} KB · ${a.parts} part${a.parts > 1 ? "s" : ""} · material volume ${fmt(a.material_volume_cm3)} cm³`;
   $("#dims").innerHTML = ["X", "Y", "Z"].map((ax, i) => `<div class="dim-cell"><div class="axis">${ax}</div><div class="val">${fmt(a.dimensions_mm[i])}<small>mm</small></div></div>`).join("");
-  $("#warnings").innerHTML = a.avertissements.map((w) => `<div class="warn">${esc(w)}</div>`).join("");
+  $("#warnings").innerHTML = a.warnings.map((w) => `<div class="warn">${esc(w)}</div>`).join("");
 }
 
-/* ---------------- souris : survol des faces, clic = sélection ---------------- */
+/* ---------------- mouse: face hover, click = selection ---------------- */
 const raycaster = new THREE.Raycaster(); let downPos = null;
 function pick(e) {
   const m = state.model; if (!m) return null;
@@ -296,10 +296,10 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   if (!h) { clearSelection(); return; }
   const fi = faceOf(h.object, h.faceIndex);
   selectNode(h.object.userData.node, false);
-  if (fi >= 0) { state.model.selectedFace = { mesh: h.object, face: fi }; hint(`${nodePath(h.object.userData.node)} · face n° ${fi + 1} — ${h.object.userData.analysis.dimensions_mm.map((x) => fmt(x, 1)).join(" × ")} mm`); }
+  if (fi >= 0) { state.model.selectedFace = { mesh: h.object, face: fi }; hint(`${nodePath(h.object.userData.node)} · face no. ${fi + 1} — ${h.object.userData.analysis.dimensions_mm.map((x) => fmt(x, 1)).join(" × ")} mm`); }
 });
 
-/* ---------------- coupe selon un angle libre ---------------- */
+/* ---------------- free-angle section ---------------- */
 function cutNormal() {
   const az = THREE.MathUtils.degToRad(state.cut.az), e = THREE.MathUtils.degToRad(state.cut.el);
   return new THREE.Vector3(Math.cos(e) * Math.cos(az), Math.cos(e) * Math.sin(az), Math.sin(e));
@@ -312,7 +312,7 @@ function cutRange(n) {
 function applyCut() {
   if (!state.model) return;
   const n = cutNormal(), [lo, hi] = cutRange(n), d = lo + (hi - lo) * state.cut.pos;
-  // On conserve le côté n·p <= d (ou l'inverse)
+  // We keep the side n·p <= d (or the reverse)
   state.plane.normal.copy(state.cut.flip ? n : n.clone().negate());
   state.plane.constant = state.cut.flip ? -d : d;
   const planes = state.cut.on ? [state.plane] : [];
@@ -330,7 +330,7 @@ function applyCut() {
   el.cutOn.checked = state.cut.on;
   if (state.activeCut !== null && !sameCut(state.cuts[state.activeCut])) { state.activeCut = null; renderCuts(); }
   document.querySelectorAll("[data-preset]").forEach((b) => b.setAttribute("aria-pressed", String(presetFor() === b.dataset.preset)));
-  hint(state.cut.on ? `Coupe : azimut ${state.cut.az}°, inclinaison ${state.cut.el}°, position ${Math.round(state.cut.pos * 100)} %` : null);
+  hint(state.cut.on ? `Section: azimuth ${state.cut.az}°, elevation ${state.cut.el}°, position ${Math.round(state.cut.pos * 100)} %` : null);
 }
 function presetFor() { const { az, el: e } = state.cut; if (e === 90 || e === -90) return "z"; if (e === 0 && (az === 0 || az === 180)) return "x"; if (e === 0 && (az === 90 || az === 270)) return "y"; return null; }
 function setView(name) {
@@ -338,17 +338,17 @@ function setView(name) {
   const c = m.box.getCenter(new THREE.Vector3()), size = m.box.getSize(new THREE.Vector3());
   const r = Math.max(size.x, size.y, size.z) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.75 + size.length() * 0.3;
   let dir;
-  if (name === "normal") { dir = cutNormal(); if (state.cut.flip) dir.negate(); } // depuis le côté retiré, face à la coupe
+  if (name === "normal") { dir = cutNormal(); if (state.cut.flip) dir.negate(); } // from the removed side, facing the section
   else dir = new THREE.Vector3(...({ iso: [1, -1, 0.8], top: [0, 0, 1], front: [0, -1, 0], side: [1, 0, 0] }[name] || [1, -1, 0.8])).normalize();
   camera.position.copy(c).addScaledVector(dir, r); controls.target.copy(c); controls.update();
 }
 
-/* ---------------- coupes enregistrées ---------------- */
-const storeKey = (name) => `coupes:${name}`;
+/* ---------------- saved sections ---------------- */
+const storeKey = (name) => `sections:${name}`;
 function loadCuts(name) { try { const v = localStorage.getItem(storeKey(name)); return v ? JSON.parse(v).map((c) => ({ include: true, ...c })) : []; } catch { return []; } }
-function persistCuts() { try { localStorage.setItem(storeKey(state.model.name), JSON.stringify(state.cuts.map(({ include, ...c }) => c))); } catch { /* stockage indisponible : la liste vit en mémoire */ } }
+function persistCuts() { try { localStorage.setItem(storeKey(state.model.name), JSON.stringify(state.cuts.map(({ include, ...c }) => c))); } catch { /* storage unavailable: the list lives in memory */ } }
 function sameCut(c) { return c && c.az === state.cut.az && c.el === state.cut.el && Math.abs(c.pos - state.cut.pos) < 1e-6 && c.flip === state.cut.flip; }
-function cutLabel(c) { return `azimut ${c.az}° · inclinaison ${c.el}° · ${Math.round(c.pos * 100)} %${c.flip ? " · inversée" : ""}`; }
+function cutLabel(c) { return `azimuth ${c.az}° · elevation ${c.el}° · ${Math.round(c.pos * 100)} %${c.flip ? " · flipped" : ""}`; }
 
 function saveCut(name) {
   const c = { name, az: state.cut.az, el: state.cut.el, pos: state.cut.pos, flip: state.cut.flip,
@@ -356,7 +356,7 @@ function saveCut(name) {
   const i = state.cuts.findIndex((x) => x.name.toLowerCase() === name.toLowerCase());
   if (i >= 0) state.cuts[i] = c; else state.cuts.push(c);
   state.activeCut = i >= 0 ? i : state.cuts.length - 1; state.cut.on = true;
-  persistCuts(); renderCuts(); applyCut(); toast(`Coupe « ${name} » enregistrée.`);
+  persistCuts(); renderCuts(); applyCut(); toast(`Section "${name}" saved.`);
 }
 function restoreCut(i, moveCamera = true) {
   const c = state.cuts[i]; if (!c) return;
@@ -371,9 +371,9 @@ function renderCuts() {
   const ul = $("#cuts"); ul.innerHTML = "";
   state.cuts.forEach((c, i) => {
     const li = document.createElement("li"); li.className = "cut" + (state.activeCut === i ? " active" : "");
-    li.innerHTML = `<span class="num-badge">${i + 1}</span><span class="name" title="Rappeler cette coupe">${esc(c.name)}</span>
-      <input type="checkbox" ${c.include ? "checked" : ""} title="Inclure dans l'analyse de série" aria-label="Inclure ${esc(c.name)} dans l'analyse">
-      <button class="act del" title="Supprimer" aria-label="Supprimer ${esc(c.name)}">×</button><span class="params">${cutLabel(c)}</span>`;
+    li.innerHTML = `<span class="num-badge">${i + 1}</span><span class="name" title="Recall this section">${esc(c.name)}</span>
+      <input type="checkbox" ${c.include ? "checked" : ""} title="Include in series analysis" aria-label="Include ${esc(c.name)} in analysis">
+      <button class="act del" title="Delete" aria-label="Delete ${esc(c.name)}">×</button><span class="params">${cutLabel(c)}</span>`;
     li.querySelector(".name").addEventListener("click", () => restoreCut(i));
     li.querySelector(".params").addEventListener("click", () => restoreCut(i));
     li.querySelector("input").addEventListener("change", (e) => { c.include = e.target.checked; updateSeriesButton(); });
@@ -384,7 +384,7 @@ function renderCuts() {
 }
 function updateSeriesButton() {
   const n = state.cuts.filter((c) => c.include).length, b = $("#btn-ai-series");
-  b.hidden = n === 0 || !sampleFn; b.textContent = `Analyser la série (${n} coupe${n > 1 ? "s" : ""})`; b.disabled = !state.model;
+  b.hidden = n === 0 || !sampleFn; b.textContent = `Analyse series (${n} section${n > 1 ? "s" : ""})`; b.disabled = !state.model;
 }
 $("#save-form").addEventListener("submit", (e) => {
   e.preventDefault(); const name = $("#save-name").value.trim(); if (!name) return;
@@ -392,15 +392,15 @@ $("#save-form").addEventListener("submit", (e) => {
   saveCut(name); $("#save-name").value = "";
 });
 
-/* ---------------- IA ---------------- */
+/* ---------------- AI ---------------- */
 let sampleFn = null, imageLimits = null;
 (async () => {
   try {
-    if (!window.claude?.use) throw new Error("hors claude.ai");
+    if (!window.claude?.use) throw new Error("outside claude.ai");
     sampleFn = await window.claude.use("sample");
-    if (!sampleFn) throw new Error("indisponible");
+    if (!sampleFn) throw new Error("unavailable");
     imageLimits = (await sampleFn.limits().catch(() => null))?.images || null;
-    if (!imageLimits) el.aiNote.textContent = "Envoie les mesures et la description de la coupe (images indisponibles dans cette vue).";
+    if (!imageLimits) el.aiNote.textContent = "Sends the measurements and section description (images unavailable in this view).";
     el.btnAi.disabled = !state.model; updateSeriesButton();
   } catch { $("#ai-unavailable").hidden = false; $("#ai-box").hidden = true; }
 })();
@@ -418,22 +418,22 @@ function contextText(seriesMode = false) {
   const m = state.model, a = m.analysis, n = cutNormal(), [lo, hi] = cutRange(n);
   const parts = treeText();
   const hiddenNow = m.meshes.filter((x) => !x.visible).map((x) => displayName(x.userData.node));
-  const sel = m.selected ? `Élément sélectionné par l'utilisateur : ${nodePath(m.selected)}${m.selectedFace && m.selected === m.selectedFace.mesh.userData.node ? ` (face n° ${m.selectedFace.face + 1})` : ""}.` : "";
+  const sel = m.selected ? `Element selected by user: ${nodePath(m.selected)}${m.selectedFace && m.selected === m.selectedFace.mesh.userData.node ? ` (face no. ${m.selectedFace.face + 1})` : ""}.` : "";
   const cut = state.cut.on
-    ? `Plan de coupe actif : normale (azimut ${state.cut.az}°, inclinaison ${state.cut.el}°) = (${n.x.toFixed(3)}, ${n.y.toFixed(3)}, ${n.z.toFixed(3)}), position ${Math.round(state.cut.pos * 100)} % de l'étendue (${fmt(lo)} → ${fmt(hi)} mm), côté ${state.cut.flip ? "positif" : "négatif"} conservé. Dans l'image, la matière tranchée apparaît en ocre/orange, les surfaces extérieures en bleu.`
-    : "Aucune coupe active : la pièce est montrée entière.";
-  return `Tu es un ingénieur packaging senior. Analyse une pièce issue d'un fichier CAO STEP, lue et maillée dans le navigateur.
-Fichier : ${m.name}
-Hors-tout X × Y × Z : ${a.dimensions_mm.join(" × ")} mm
-Volume matière : ${a.volume_matiere_cm3} cm³ · volume englobant : ${a.volume_englobant_cm3} cm³ · taux de remplissage : ${a.taux_remplissage_pct} % · surface : ${a.surface_cm2} cm²
-Structure de l'assemblage (${a.pieces} pièces, arbre « ${{ file: "fichier STEP", color: "par couleur", name: "par nom", volume: "par volume", contact: "par contact" }[m.treeMode]} », dimensions X × Y × Z) — désigne les pièces par ces noms :
+    ? `Active section plane: normal (azimuth ${state.cut.az}°, elevation ${state.cut.el}°) = (${n.x.toFixed(3)}, ${n.y.toFixed(3)}, ${n.z.toFixed(3)}), position ${Math.round(state.cut.pos * 100)} % of range (${fmt(lo)} → ${fmt(hi)} mm), ${state.cut.flip ? "positive" : "negative"} side kept. In the image, the cut material appears ochre/orange, outer surfaces in blue.`
+    : "No active section: the part is shown in full.";
+  return `You are a senior packaging engineer. Analyse a part from a CAD STEP file, read and meshed in the browser.
+File: ${m.name}
+Overall X × Y × Z: ${a.dimensions_mm.join(" × ")} mm
+Material volume: ${a.material_volume_cm3} cm³ · bounding volume: ${a.bounding_volume_cm3} cm³ · fill rate: ${a.fill_rate_pct} % · surface: ${a.surface_cm2} cm²
+Assembly structure (${a.parts} parts, tree "${{ file: "STEP file", color: "by colour", name: "by name", volume: "by volume", contact: "by contact" }[m.treeMode]}", dimensions X × Y × Z) — refer to parts by these names:
 ${parts}
-${hiddenNow.length ? `Pièces masquées dans la vue actuelle : ${hiddenNow.join(", ")}.` : ""}
+${hiddenNow.length ? `Parts hidden in current view: ${hiddenNow.join(", ")}.` : ""}
 ${sel}
-${a.avertissements.length ? "Alertes : " + a.avertissements.join(" | ") : ""}
+${a.warnings.length ? "Alerts: " + a.warnings.join(" | ") : ""}
 ${cut}
-${seriesMode ? "" : imageLimits ? "Images jointes : 1) la vue actuelle avec la coupe, 2) la même vue sans coupe. Les cotes bleues ne sont pas dans les images." : "Aucune image jointe : raisonne à partir des données."}
-Réponds en français, de façon structurée et concise (titres courts, phrases brèves), en distinguant ce que tu observes de ce que tu supposes. Si une information manque pour conclure, dis-le et propose la coupe ou la mesure à faire.`;
+${seriesMode ? "" : imageLimits ? "Attached images: 1) current view with section, 2) same view without section. Blue dimension labels are not in the images." : "No images attached: reason from the data."}
+Respond in English, in a structured and concise way (short headings, brief sentences), distinguishing what you observe from what you assume. If information is missing to conclude, say so and suggest the section or measurement to make.`;
 }
 
 async function captureSeries() {
@@ -456,56 +456,56 @@ function treeText() {
   const instances = new Map(); m.meshes.forEach((x) => instances.set(x.userData.signature, (instances.get(x.userData.signature) || 0) + 1));
   const walk = (node, depth) => {
     const agg = aggregate(node), d = [0, 1, 2].map((k) => fmt(agg.max[k] - agg.min[k], 1)).join(" × ");
-    const inst = node.kind === "part" && instances.get(node.mesh.userData.signature) > 1 ? ` [instanciée ×${instances.get(node.mesh.userData.signature)}]` : "";
-    const extra = node.kind === "part" ? `${node.mesh.visible ? "" : " [masquée]"}${node.mesh.userData.analysis.epaisseur_mm_estimee ? `, paroi ~${node.mesh.userData.analysis.epaisseur_mm_estimee} mm` : ""}${node.mesh.userData.analysis.etanche ? "" : ", maillage non fermé"}, couleur #${node.mesh.userData.baseColor.toString(16).padStart(6, "0")}${node.mesh.userData.stepColor ? "" : " (attribuée)"}, ${node.mesh.userData.faces.length} faces` : ` (${agg.count} pièces)`;
+    const inst = node.kind === "part" && instances.get(node.mesh.userData.signature) > 1 ? ` [instantiated ×${instances.get(node.mesh.userData.signature)}]` : "";
+    const extra = node.kind === "part" ? `${node.mesh.visible ? "" : " [hidden]"}${node.mesh.userData.analysis.wall_thickness_mm ? `, wall ~${node.mesh.userData.analysis.wall_thickness_mm} mm` : ""}${node.mesh.userData.analysis.watertight ? "" : ", open mesh"}, colour #${node.mesh.userData.baseColor.toString(16).padStart(6, "0")}${node.mesh.userData.stepColor ? "" : " (assigned)"}, ${node.mesh.userData.faces.length} faces` : ` (${agg.count} parts)`;
     lines.push(`${"  ".repeat(depth)}- ${displayName(node)}${inst} : ${d} mm${agg.volume ? `, ${fmt(agg.volume, 1)} cm³` : ""}${extra}`);
     node.children.forEach((c) => walk(c, depth + 1));
   };
   walk(m.tree, 0);
-  return lines.slice(0, 120).join("\n") + (lines.length > 120 ? `\n  … (${lines.length - 120} lignes omises)` : "");
+  return lines.slice(0, 120).join("\n") + (lines.length > 120 ? `\n  … (${lines.length - 120} lines omitted)` : "");
 }
 
 function seriesText(series) {
   const lines = series.map(({ cut: c }, i) => { const n = normalOf(c), [lo, hi] = cutRange(n);
-    const hidden = c.hidden?.length ? ` Pièces masquées sur cette image : ${c.hidden.map((h) => state.model.renames[h] || h).join(", ")}.` : "";
-    return `Image ${i + 1} — coupe « ${c.name} » : normale (azimut ${c.az}°, inclinaison ${c.el}°) = (${n.x.toFixed(3)}, ${n.y.toFixed(3)}, ${n.z.toFixed(3)}), position ${Math.round(c.pos * 100)} % de l'étendue (${fmt(lo)} → ${fmt(hi)} mm), côté ${c.flip ? "positif" : "négatif"} conservé.${hidden}`; });
-  return `Série de ${series.length} coupes enregistrées par l'utilisateur, une image par coupe, dans l'ordre :\n${lines.join("\n")}\nDans chaque image, la matière tranchée apparaît en ocre/orange et les surfaces extérieures en bleu. Analyse chaque coupe, puis fais une synthèse d'ensemble de la pièce (cohérence des épaisseurs, zones à risque, recommandations), en citant les coupes par leur nom.`;
+    const hidden = c.hidden?.length ? ` Parts hidden in this image: ${c.hidden.map((h) => state.model.renames[h] || h).join(", ")}.` : "";
+    return `Image ${i + 1} — section "${c.name}": normal (azimuth ${c.az}°, elevation ${c.el}°) = (${n.x.toFixed(3)}, ${n.y.toFixed(3)}, ${n.z.toFixed(3)}), position ${Math.round(c.pos * 100)} % of range (${fmt(lo)} → ${fmt(hi)} mm), ${c.flip ? "positive" : "negative"} side kept.${hidden}`; });
+  return `Series of ${series.length} sections saved by the user, one image per section, in order:\n${lines.join("\n")}\nIn each image, the cut material appears ochre/orange and outer surfaces in blue. Analyse each section, then provide an overall synthesis of the part (wall thickness consistency, risk areas, recommendations), citing sections by name.`;
 }
 function normalOf(c) { const az = THREE.MathUtils.degToRad(c.az), e = THREE.MathUtils.degToRad(c.el); return new THREE.Vector3(Math.cos(e) * Math.cos(az), Math.cos(e) * Math.sin(az), Math.sin(e)); }
 
 async function askAI(question, isFollowUp, series = null) {
   if (!sampleFn || !state.model) return;
   state.ctl?.abort(); state.ctl = new AbortController();
-  el.btnAi.disabled = true; el.btnStop.hidden = false; el.answer.hidden = false; el.answer.className = "answer thinking"; el.answer.textContent = "Préparation des captures…";
+  el.btnAi.disabled = true; el.btnStop.hidden = false; el.answer.hidden = false; el.answer.className = "answer thinking"; el.answer.textContent = "Preparing screenshots…";
   try {
     const images = []; let extra = "";
     if (series) {
       let shots = await captureSeries();
-      if (imageLimits && shots.length > imageLimits.maxCount) { toast(`Limite de ${imageLimits.maxCount} images : seules les ${imageLimits.maxCount} premières coupes sont envoyées.`); shots = shots.slice(0, imageLimits.maxCount); }
+      if (imageLimits && shots.length > imageLimits.maxCount) { toast(`Image limit of ${imageLimits.maxCount}: only the first ${imageLimits.maxCount} sections are sent.`); shots = shots.slice(0, imageLimits.maxCount); }
       if (imageLimits) images.push(...shots.map((x) => x.blob));
       extra = "\n\n" + seriesText(shots);
     } else if (imageLimits && !isFollowUp) { images.push(await captureBlob(state.cut.on)); if (state.cut.on && imageLimits.maxCount >= 2) images.push(await captureBlob(false)); }
-    el.answer.textContent = "Analyse en cours…";
-    if (!isFollowUp) state.turns = [{ role: "user", content: `${contextText(!!series)}${extra}\n\nConsigne : ${question}` }];
+    el.answer.textContent = "Analysis in progress…";
+    if (!isFollowUp) state.turns = [{ role: "user", content: `${contextText(!!series)}${extra}\n\nInstruction: ${question}` }];
     else state.turns.push({ role: "user", content: question });
     const opts = { cache: false, signal: state.ctl.signal, onText: ({ text }) => { el.answer.className = "answer"; el.answer.textContent = text; el.answer.scrollTop = el.answer.scrollHeight; } };
     if (images.length) opts.images = images;
     const { text, truncated } = await sampleFn(state.turns, opts);
     state.turns.push({ role: "assistant", content: text });
-    if (truncated) toast("Réponse coupée : posez une question plus ciblée.");
+    if (truncated) toast("Response cut off: ask a more focused question.");
     el.follow.hidden = false; el.aiFollow.focus();
   } catch (e) {
-    if (e.code === "cancelled") { el.answer.textContent = e.text || "Analyse arrêtée."; }
+    if (e.code === "cancelled") { el.answer.textContent = e.text || "Analysis stopped."; }
     else {
       el.answer.className = "answer error";
-      const msg = { not_granted: "Vous n'avez pas autorisé cette page à utiliser Claude.", rate_limited: "Trop de demandes pour le moment : réessayez dans quelques minutes.", image_rejected: "Image refusée : réduisez la fenêtre et réessayez.", refused: "Claude a décliné cette demande : reformulez la consigne.", prompt_too_large: "Trop de données : la pièce contient trop de sous-pièces." }[e.code] || `Analyse impossible (${e.code || "erreur"}).`;
+      const msg = { not_granted: "You have not authorised this page to use Claude.", rate_limited: "Too many requests right now: try again in a few minutes.", image_rejected: "Image rejected: reduce the window size and try again.", refused: "Claude declined this request: rephrase the prompt.", prompt_too_large: "Too much data: the part has too many sub-parts." }[e.code] || `Analysis failed (${e.code || "error"}).`;
       el.answer.textContent = (e.text ? e.text + "\n\n" : "") + msg;
       if (e.code === "not_granted" || e.code === "sampling_disabled") { sampleFn = null; $("#ai-unavailable").hidden = false; $("#ai-box").hidden = true; }
     }
   } finally { el.btnAi.disabled = !sampleFn; el.btnStop.hidden = true; state.ctl = null; updateSeriesButton(); }
 }
 
-/* ---------------- événements ---------------- */
+/* ---------------- events ---------------- */
 ["dragenter", "dragover"].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); document.body.classList.add("dragging"); }));
 let dlt; document.addEventListener("dragleave", (e) => { e.preventDefault(); clearTimeout(dlt); dlt = setTimeout(() => document.body.classList.remove("dragging"), 80); });
 document.addEventListener("drop", (e) => { e.preventDefault(); document.body.classList.remove("dragging"); handleFiles(e.dataTransfer.files); });
@@ -522,17 +522,17 @@ $("#flip").addEventListener("click", () => { state.cut.flip = !state.cut.flip; s
 document.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => {
   const p = { x: [0, 0], y: [90, 0], z: [0, 90] }[b.dataset.preset]; state.cut.az = p[0]; state.cut.el = p[1]; el.az.value = p[0]; el.el.value = p[1]; state.cut.on = true; applyCut();
 }));
-el.btnAi.addEventListener("click", () => askAI(el.aiQ.value.trim() || "Analyse cette coupe.", false));
-$("#btn-ai-series").addEventListener("click", () => askAI(el.aiQ.value.trim() || "Analyse cette série de coupes.", false, true));
+el.btnAi.addEventListener("click", () => askAI(el.aiQ.value.trim() || "Analyse this section.", false));
+$("#btn-ai-series").addEventListener("click", () => askAI(el.aiQ.value.trim() || "Analyse this series of sections.", false, true));
 $("#btn-follow").addEventListener("click", () => { const q = el.aiFollow.value.trim(); if (!q) return; el.aiFollow.value = ""; askAI(q, true); });
 el.aiFollow.addEventListener("keydown", (e) => { if (e.key === "Enter") $("#btn-follow").click(); });
 el.btnStop.addEventListener("click", () => state.ctl?.abort());
-$("#btn-shot").addEventListener("click", async () => { if (!state.model) return toast("Ouvrez d'abord un fichier.", true); const b = await captureBlob(state.cut.on); const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `${state.model.name.replace(/\.(step|stp)$/i, "")}_coupe.png`; a.click(); });
+$("#btn-shot").addEventListener("click", async () => { if (!state.model) return toast("Open a file first.", true); const b = await captureBlob(state.cut.on); const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `${state.model.name.replace(/\.(step|stp)$/i, "")}_section.png`; a.click(); });
 $("#tree-mode").addEventListener("change", (e) => { if (state.model) rebuildTree(e.target.value); });
 document.addEventListener("keydown", (e) => { if (e.target.matches("input, textarea, select")) return; const k = e.key.toLowerCase(); if (k === "escape") clearSelection(); if (k === "p") { state.cut.on = !state.cut.on; applyCut(); } if (k === "i") setView("iso"); if (k === "n") setView("normal"); if (/^[1-9]$/.test(k)) restoreCut(+k - 1); });
 
-/* ---------------- utilitaires ---------------- */
-function fmt(v, d = 2) { return Number(v).toLocaleString("fr-FR", { maximumFractionDigits: d }); }
+/* ---------------- utilities ---------------- */
+function fmt(v, d = 2) { return Number(v).toLocaleString("en-US", { maximumFractionDigits: d }); }
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function hint(t) { el.hint.hidden = !t; el.hint.textContent = t || ""; }
 let tt; function toast(msg, err) { el.toast.textContent = msg; el.toast.className = "toast" + (err ? " error" : ""); el.toast.hidden = false; clearTimeout(tt); tt = setTimeout(() => (el.toast.hidden = true), err ? 8000 : 3500); }

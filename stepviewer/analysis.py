@@ -85,6 +85,8 @@ def estimate_wall_thickness(mesh: trimesh.Trimesh) -> float | None:
     """
     if not mesh.is_watertight or mesh.area <= 0:
         return None
+    # 2V/S: for a hollow shell with two parallel faces each of area A,
+    # V ≈ A·t, total surface ≈ 2A, so t = 2V/S.
     t = 2.0 * abs(mesh.volume) / mesh.area
     if t > 0.2 * mesh.extents.min():
         return None
@@ -93,7 +95,27 @@ def estimate_wall_thickness(mesh: trimesh.Trimesh) -> float | None:
 
 def analyze(scene: trimesh.Scene, material: str | None = None,
             density: float | None = None) -> ModelInfo:
-    """Computes all useful information for a packaging review."""
+    """Analyse a loaded STEP scene and return a :class:`ModelInfo` summary.
+
+    Parameters
+    ----------
+    scene:
+        A trimesh scene produced by :func:`~stepviewer.loader.load_step`.
+    material:
+        Short name of a packaging material (e.g. ``"pet"``, ``"hdpe"``).
+        Must be a key of :data:`MATERIALS`.  When provided without *density*,
+        the lookup density from :data:`MATERIALS` is used automatically.
+    density:
+        Override density in g/cm³.  Takes precedence over the *material*
+        lookup when both are supplied.
+
+    Returns
+    -------
+    ModelInfo
+        Aggregated metrics: axis-aligned and oriented bounding-box dimensions,
+        total material volume, surface area, fill rate, per-part detail list,
+        estimated mass (when density is known), and any unit-sanity warnings.
+    """
     if material and density is None:
         key = material.lower().replace("-", "_").replace(" ", "_")
         if key not in MATERIALS:
@@ -164,11 +186,14 @@ analyse = analyze
 
 
 def interference_check(scene: trimesh.Scene, max_pairs: int = 50) -> list[tuple[str, str]]:
-    """Detects pairs of parts whose bounding boxes overlap.
+    """Detect pairs of parts whose axis-aligned bounding boxes overlap.
 
-    A quick first alert for spotting collisions between product, padding and
-    sleeve in an assembly. Does not replace a proper interference-detection
-    analysis.
+    Runs an O(N²) bounding-box pair test — fast enough for typical packaging
+    assemblies (tens of parts) but not intended for large mechanism models.
+    A bounding-box hit is a necessary but not sufficient condition for a real
+    collision; false positives occur for parts that are close but not touching.
+
+    Returns at most *max_pairs* pairs to keep the API response bounded.
     """
     names = list(scene.geometry)
     hits = []

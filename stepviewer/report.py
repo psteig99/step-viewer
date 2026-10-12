@@ -75,7 +75,13 @@ def csv_rows(infos: list[ModelInfo]) -> list[dict]:
 
 
 def csv_report(infos: list[ModelInfo], out: Path) -> Path:
-    with out.open("w", newline="", encoding="utf-8-sig") as f:  # BOM: opens directly in Excel
+    """Write a multi-row CSV summary of *infos* to *out*.
+
+    The file is encoded as UTF-8 with BOM (``utf-8-sig``) so that Excel
+    opens it directly without a text-import wizard, and uses ``;`` as the
+    delimiter, which is the European spreadsheet convention.
+    """
+    with out.open("w", newline="", encoding="utf-8-sig") as f:  # BOM for direct Excel open
         w = csv.DictWriter(f, fieldnames=CSV_FIELDS, delimiter=";")
         w.writeheader()
         w.writerows(csv_rows(infos))
@@ -86,7 +92,12 @@ def csv_report(infos: list[ModelInfo], out: Path) -> Path:
 # Standalone HTML (report + 3D viewer three.js, shareable by email)
 # ----------------------------------------------------------------------------
 def _viewer_fragment(scene: trimesh.Scene) -> str:
-    """Standalone 3D viewer (trimesh/three.js) embedded in an iframe srcdoc."""
+    """Return an iframe that hosts the trimesh built-in notebook 3D viewer.
+
+    Uses ``trimesh.viewer.notebook.scene_to_html`` (three.js-based) to render
+    a self-contained HTML page, then base64-encodes it into an iframe ``src``
+    so the viewer is fully embedded with no external dependencies.
+    """
     import base64
     from trimesh.viewer.notebook import scene_to_html
     page = scene_to_html(scene)
@@ -97,6 +108,14 @@ def _viewer_fragment(scene: trimesh.Scene) -> str:
 
 def html_report(info: ModelInfo, scene: trimesh.Scene | None, out: Path,
                 embed_3d: bool = True) -> Path:
+    """Generate a standalone HTML report and write it to *out*.
+
+    Page layout: a KPI tile grid (one card per metric, CSS grid auto-fit),
+    an optional warnings banner, an iframe holding the embedded 3D viewer
+    (see :func:`_viewer_fragment`), and a scrollable part-detail table.
+    Everything is inlined — no external assets — so the file is shareable
+    by email or network drive.
+    """
     e = html.escape
     L, l, h = info.dimensions_mm
     Lo, lo, ho = info.oriented_dimensions_mm
