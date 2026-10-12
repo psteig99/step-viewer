@@ -1,7 +1,0 @@
-{
-  "name": "stepviewer-ui-tests",
-  "private": true,
-  "type": "module",
-  "scripts": { "test": "node smoke.mjs" },
-  "devDependencies": { "@sparticuz/chromium": "131.0.0", "puppeteer-core": "23.11.1" }
-}
