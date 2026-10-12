@@ -33,16 +33,19 @@ export async function runAiAnalysis(m) {
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Error ${res.status}`);
 
-    // Stream SSE deltas as they arrive
+    // Stream SSE deltas — buffer renders to ~50 ms to avoid jank
     const reader = res.body.getReader();
     const dec = new TextDecoder();
-    let buf = "", full = "";
+    let buf = "", full = "", flushTimer = null;
+    const flush = () => { out.innerHTML = renderMarkdown(full); out.scrollTop = out.scrollHeight; flushTimer = null; };
+    const scheduleFlush = () => { if (!flushTimer) flushTimer = setTimeout(flush, 50); };
+
     outer: while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
       const lines = buf.split("\n");
-      buf = lines.pop();                          // keep incomplete line
+      buf = lines.pop();
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
         const payload = line.slice(6);
@@ -51,11 +54,11 @@ export async function runAiAnalysis(m) {
           const { delta, error } = JSON.parse(payload);
           if (error) throw new Error(error);
           full += delta;
-          out.innerHTML = renderMarkdown(full);
-          out.scrollTop = out.scrollHeight;
+          scheduleFlush();
         } catch { /* skip malformed chunks */ }
       }
     }
+    if (flushTimer) { clearTimeout(flushTimer); flush(); } // render remainder immediately
   } catch (err) {
     out.textContent = `Error: ${err.message}`;
     toast(err.message, true);

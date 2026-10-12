@@ -23,7 +23,7 @@ const state = {
   models: new Map(),
   current: null,
   materials: {},
-  flags: { dims: true, wire: false, alpha: false, grid: true, measure: false, clip: false },
+  flags: { dims: true, wire: false, alpha: false, grid: true, measure: false, clip: false, annotate: false },
   clip: { axis: "x", flip: false, pos: 0.5, plane: new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0) },
   measure: { points: [], objects: [] },
   explode: 0,
@@ -645,4 +645,4 @@ window.StepViewer = {
 /* ------------------------------------------------------------------------ */
 /*  ES module exports (for capture.js, analysis.js, export.js)              */
 /* ------------------------------------------------------------------------ */
-export { setView, updateClip, applyFlags, captureAll, cur, state, toast };
+export { setView, updateClip, applyFlags, captureAll, cur, state, toast, scene, camera, renderer };

@@ -46,4 +46,8 @@ function thumb(label, dataUrl) {
 // Also export legacy names so analysis.js / export.js still work
 export { populateThumbnails as populateViewThumbnails, populateThumbnails as populateSectionThumbnails };
 
-onModelLoad((m) => requestAnimationFrame(() => populateThumbnails(m)));
+onModelLoad((m) => {
+  const run = () => populateThumbnails(m);
+  if ("requestIdleCallback" in window) requestIdleCallback(run, { timeout: 2000 });
+  else setTimeout(run, 100);
+});

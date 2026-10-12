@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("fastapi")
+pytest.importorskip("cascadio", reason="cascadio not installed")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from stepviewer.server import app  # noqa: E402

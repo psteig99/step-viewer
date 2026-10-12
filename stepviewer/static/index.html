@@ -66,6 +66,7 @@
       </div>
       <div class="tool-group" role="group" aria-label="Tools">
         <button class="tool toggle" data-toggle="measure" aria-pressed="false" title="Measure: click two points (M)">Measure</button>
+        <button class="tool toggle" data-toggle="annotate" aria-pressed="false" title="Annotations: click to pin a note (N)">Notes</button>
         <button class="tool toggle" data-toggle="clip" aria-pressed="false" title="Section plane (P)">Section</button>
         <label class="tool range" title="Exploded view">Explode <input type="range" id="explode" min="0" max="2" step="0.05" value="0"></label>
         <button class="tool" data-action="shot" title="Screenshot PNG (F)">Screenshot</button>
@@ -103,6 +104,11 @@
     <section class="block" id="sections-block" hidden>
       <h2>Section cuts</h2>
       <div class="section-grid" id="section-grid"></div>
+    </section>
+
+    <section class="block" id="annotations-block" hidden>
+      <h2>Annotations</h2>
+      <ul class="annot-list" id="annot-list"></ul>
     </section>
 
     <section class="block" id="ai-block">
@@ -152,7 +158,7 @@
 
     <section class="block shortcuts">
       <h2>Shortcuts</h2>
-      <p>I X Y Z views · R fit · W wireframe · T transparency · B dims · M measure · P section · F screenshot · Esc cancel</p>
+      <p>I X Y Z views · R fit · W wireframe · T transparency · B dims · M measure · P section · N notes · F screenshot · Esc cancel</p>
       <p>Mouse: drag = rotate · scroll = zoom · right-click = pan</p>
     </section>
   </aside>
