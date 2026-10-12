@@ -163,11 +163,33 @@ function selectMeshInTree(hitObj) {
   const idx = meshes.indexOf(m);
   const li = document.querySelector(`li.part[data-mesh-index="${idx}"]`);
   if (!li) return;
-  li.scrollIntoView({behavior:"smooth", block:"nearest"});
+  // Expand any collapsed ancestor <ul> groups
+  let el = li.parentElement;
+  while (el) {
+    if (el.id === "parts-list") break;
+    if (el.tagName === "UL" && el.hidden) {
+      el.hidden = false;
+      const hdr = el.previousElementSibling;
+      if (hdr) {
+        const arrow = hdr.querySelector("[data-arrow]");
+        if (arrow) arrow.style.transform = "";
+      }
+    }
+    el = el.parentElement;
+  }
+  // Scroll main panel so the Maillages section is visible
+  const panel = document.getElementById("panel");
+  const sec = document.getElementById("parts-list").closest(".block");
+  if (sec && panel) panel.scrollTop = sec.offsetTop - 8;
+  // Scroll within the parts list
+  setTimeout(() => li.scrollIntoView({behavior:"smooth", block:"nearest"}), 80);
+  // Flash animation
   li.classList.remove("tree-sel");
   void li.offsetWidth;
   li.classList.add("tree-sel");
   li.addEventListener("animationend", () => li.classList.remove("tree-sel"), {once:true});
+  // Name feedback
+  toast((m.name||"").split(":").pop() || ("Mesh "+(idx+1)));
 }
 
 function appendMeshRow(parent, mesh, paddingLeft, leafLabel) {

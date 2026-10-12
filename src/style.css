@@ -121,8 +121,8 @@ button { cursor:pointer; }
 .part { display:grid; grid-template-columns:auto 10px 1fr auto; align-items:center; gap:6px; padding:4px 4px; border-radius:var(--r); }
 .part:hover { background:var(--cyan-s); }
 .part.focus { background:var(--kraft-s); }
-@keyframes tree-flash { 0%,100% { background:var(--kraft-s); } 50% { background:transparent; } }
-.part.tree-sel { animation:tree-flash .45s ease 3; }
+@keyframes tree-flash { 0%,100% { background:var(--kraft-s); outline:2px solid var(--kraft); } 50% { background:transparent; outline:2px solid transparent; } }
+.part.tree-sel { animation:tree-flash .5s ease 3; }
 .part input { accent-color:var(--kraft); }
 .part .sw { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
 .part .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; font-size:13px; }
