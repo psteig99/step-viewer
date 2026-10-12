@@ -71,12 +71,17 @@ function refreshAnnotPanel() {
 renderer.domElement.addEventListener("pointerdown", e => { downXY=[e.clientX,e.clientY]; });
 renderer.domElement.addEventListener("pointerup", e => {
   if (!downXY || Math.hypot(e.clientX-downXY[0],e.clientY-downXY[1])>4 || e.button!==0) return;
-  if (!flags.annotate || !meshes.length) return;
+  if (!meshes.length) return;
   const rect = renderer.domElement.getBoundingClientRect();
   raycaster.setFromCamera(new THREE.Vector2(
     ((e.clientX-rect.left)/rect.width)*2-1,
     -((e.clientY-rect.top)/rect.height)*2+1
   ), camera);
   const hits = raycaster.intersectObjects(meshes, true);
-  if (hits.length) showAnnotPopup(e.clientX, e.clientY, hits[0].point);
+  if (!hits.length) return;
+  if (flags.annotate) {
+    showAnnotPopup(e.clientX, e.clientY, hits[0].point);
+  } else {
+    selectMeshInTree(hits[0].object);
+  }
 });

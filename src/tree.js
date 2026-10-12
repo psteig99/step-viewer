@@ -156,11 +156,26 @@ function populatePartsList() {
   else renderTreeNode(tree, ul, 0, "");
 }
 
+function selectMeshInTree(hitObj) {
+  let m = hitObj;
+  while (m && !meshes.includes(m)) m = m.parent;
+  if (!m) return;
+  const idx = meshes.indexOf(m);
+  const li = document.querySelector(`li.part[data-mesh-index="${idx}"]`);
+  if (!li) return;
+  li.scrollIntoView({behavior:"smooth", block:"nearest"});
+  li.classList.remove("tree-sel");
+  void li.offsetWidth;
+  li.classList.add("tree-sel");
+  li.addEventListener("animationend", () => li.classList.remove("tree-sel"), {once:true});
+}
+
 function appendMeshRow(parent, mesh, paddingLeft, leafLabel) {
   const col = "#"+mesh.userData.baseColor.toString(16).padStart(6,"0");
   const li  = document.createElement("li"); li.className="part";
   li.style.cssText="padding-left:"+(paddingLeft+4)+"px;grid-template-columns:auto 10px 1fr auto;";
   li.dataset.fullName = mesh.name.toLowerCase();
+  li.dataset.meshIndex = meshes.indexOf(mesh).toString();
   li.innerHTML = `<input type="checkbox" checked><span class="sw" style="background:${col};cursor:pointer;border:1px solid transparent;" title="Changer la couleur"></span>`;
   li.querySelector("input").addEventListener("change", e => { mesh.visible=e.target.checked; });
   li.addEventListener("mouseenter", () => { if (mesh.material?.emissive) mesh.material.emissive.setHex(0x223344); });
